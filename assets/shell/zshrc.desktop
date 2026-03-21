@@ -1,0 +1,216 @@
+# Linux Setup Zsh Config (Desktop)
+
+typeset -U path
+path=(
+  "$HOME/.local/bin"
+  $path
+)
+export PATH
+
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_REDUCE_BLANKS
+setopt SHARE_HISTORY
+setopt INC_APPEND_HISTORY
+setopt HIST_IGNORE_SPACE
+setopt EXTENDED_HISTORY
+
+# Sync xterm-ghostty terminfo to remote host
+ghostty_sync_terminfo() {
+  local target="$1"
+  if [[ -z "$target" ]]; then
+    echo "Usage: ghostty_sync_terminfo user@host"
+    return 1
+  fi
+
+  if ! command -v infocmp >/dev/null 2>&1 || ! infocmp -x xterm-ghostty >/dev/null 2>&1; then
+    echo "❌ Local xterm-ghostty terminfo not found (or infocmp missing)."
+    echo "   Please ensure ncurses tools are installed locally."
+    return 1
+  fi
+
+  infocmp -x xterm-ghostty | command ssh "$target" '
+set -e
+mkdir -p "$HOME/.terminfo"
+if command -v tic >/dev/null 2>&1; then
+  tic -x -o "$HOME/.terminfo" /dev/stdin
+  echo "✅ xterm-ghostty terminfo installed at ~/.terminfo"
+else
+  echo "❌ Remote tic not found. Install ncurses-term/ncurses-bin first." >&2
+  exit 1
+fi
+'
+}
+
+ghostty_check_remote_terminfo() {
+  local target="$1"
+  if [[ -z "$target" ]]; then
+    echo "Usage: ghostty_check_remote_terminfo user@host"
+    return 1
+  fi
+
+  command ssh "$target" '
+if command -v infocmp >/dev/null 2>&1 && infocmp -x xterm-ghostty >/dev/null 2>&1; then
+  echo "✅ remote xterm-ghostty terminfo is available"
+else
+  echo "⚠️  remote xterm-ghostty terminfo is missing"
+  echo "    run: ghostty_sync_terminfo user@host"
+fi
+'
+}
+
+# Fallback to xterm-256color when remote lacks xterm-ghostty terminfo
+# Set GHOSTTY_SSH_FALLBACK_TERM=0 to disable fallback
+if [[ -n "${SSH_CONNECTION:-}" && "${TERM:-}" == "xterm-ghostty" ]]; then
+  if ! command -v infocmp >/dev/null 2>&1 || ! infocmp -x xterm-ghostty >/dev/null 2>&1; then
+    if [[ "${GHOSTTY_SSH_FALLBACK_TERM:-1}" == "1" ]]; then
+      export TERM=xterm-256color
+      export GHOSTTY_TERM_FALLBACK_ACTIVE=1
+    fi
+  fi
+fi
+
+if [[ -o interactive && "${GHOSTTY_TERM_FALLBACK_ACTIVE:-0}" == "1" && -z "${__GHOSTTY_FALLBACK_NOTIFIED:-}" ]]; then
+  export __GHOSTTY_FALLBACK_NOTIFIED=1
+  echo "⚠️  remote missing xterm-ghostty terminfo; temporary fallback TERM=xterm-256color"
+  echo "   tip: run ghostty_sync_terminfo user@host to restore full native profile"
+fi
+
+bindkey -e
+bindkey '^[[H' beginning-of-line
+bindkey '^[[F' end-of-line
+bindkey '^[[3~' delete-char
+bindkey '^[[1;5C' forward-word
+bindkey '^[[1;5D' backward-word
+bindkey '^[[A' history-search-backward
+bindkey '^[[B' history-search-forward
+
+if [[ ! -f "$HOME/.local/share/zinit/zinit.git/zinit.zsh" ]]; then
+  command mkdir -p "$HOME/.local/share/zinit"
+  command git clone https://github.com/zdharma-continuum/zinit "$HOME/.local/share/zinit/zinit.git"
+fi
+
+source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
+autoload -Uz _zinit
+(( ${+_comps} )) && _comps[zinit]=_zinit
+
+zinit wait lucid for \
+  zdharma-continuum/zinit-annex-as-monitor \
+  zdharma-continuum/zinit-annex-bin-gem-node \
+  zdharma-continuum/zinit-annex-patch-dl \
+  zdharma-continuum/zinit-annex-rust
+
+zinit wait lucid for \
+  atinit"zicompinit; zicdreplay" \
+    zdharma-continuum/fast-syntax-highlighting \
+  atload"_zsh_autosuggest_start" \
+    zsh-users/zsh-autosuggestions \
+  blockf atpull"zinit creinstall -q ." \
+    zsh-users/zsh-completions
+
+zinit wait lucid for \
+  Aloxaf/fzf-tab
+
+zstyle ':completion:*' auto-description 'specify: %d'
+zstyle ':completion:*' completer _expand _complete _correct _approximate
+zstyle ':completion:*' format 'Completing %d'
+zstyle ':completion:*' group-name ''
+zstyle ':completion:*' menu select=2
+zstyle ':completion:*:default' list-colors ${(s.:.)LS_COLORS}
+zstyle ':completion:*' list-colors ''
+zstyle ':completion:*' matcher-list '' 'm:{a-z}={A-Z}' 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=* l:|=*'
+zstyle ':completion:*' menu select=long
+zstyle ':completion:*' use-compctl false
+zstyle ':completion:*' verbose true
+zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
+zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
+
+zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color=always $realpath'
+zstyle ':fzf-tab:*' fzf-flags --height=40%
+
+# Modern CLI Replacements with graceful fallback
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza --icons --git --group-directories-first'
+  alias ll='eza -al --icons --git --group-directories-first'
+  alias la='eza -A --icons --git --group-directories-first'
+  alias l='eza -C --icons --git --group-directories-first'
+else
+  # Fallback aliases if eza is not installed
+  alias ls='ls --color=auto'
+  alias ll='ls -alFh --color=auto'
+  alias la='ls -A --color=auto'
+  alias l='ls -CF --color=auto'
+fi
+
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+
+alias grep='rg --color=auto'
+alias fgrep='rg -F --color=auto'
+alias egrep='rg -e --color=auto'
+
+if command -v batcat >/dev/null 2>&1; then
+  alias cat='batcat --paging=never -p'
+elif command -v bat >/dev/null 2>&1; then
+  alias cat='bat --paging=never -p'
+fi
+
+if command -v fdfind >/dev/null 2>&1; then
+  alias find='fdfind'
+elif command -v fd >/dev/null 2>&1; then
+  alias find='fd'
+fi
+
+alias rm='trash-put'
+alias tl='trash-list'
+alias trestore='trash-restore'
+alias tempty='trash-empty'
+
+alias df='df -h'
+alias du='du -h'
+alias free='free -h'
+alias ip='ip -c'
+
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline --graph --decorate -20'
+alias gd='git diff'
+
+# Desktop profile intentionally avoids shell-level proxy exports.
+
+setopt AUTO_CD
+setopt AUTO_PUSHD
+setopt PUSHD_IGNORE_DUPS
+setopt CORRECT
+setopt INTERACTIVE_COMMENTS
+setopt NO_NOMATCH
+setopt AUTO_MENU
+setopt ALWAYS_TO_END
+
+# Load FZF Native Keybindings (if fzf installed)
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# Load nvm when present.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+  . "$NVM_DIR/nvm.sh"
+  [[ -s "$NVM_DIR/bash_completion" ]] && . "$NVM_DIR/bash_completion"
+fi
+
+# Prevent external environments (conda, venv) from modifying the prompt
+export CONDA_CHANGEPS1=false
+export VIRTUAL_ENV_DISABLE_PROMPT=1
+# Keep bracketed paste enabled for correct multiline paste behavior.
+# Set DISABLE_BRACKETED_PASTE=1 only for temporary troubleshooting.
+if [[ "${DISABLE_BRACKETED_PASTE:-0}" != "1" ]]; then
+  autoload -Uz bracketed-paste-magic
+  zle -N bracketed-paste bracketed-paste-magic
+fi
+
+eval "$(starship init zsh)"

@@ -1,0 +1,16 @@
+# Linux Setup Profile (Shared)
+# Keep login-shell behavior predictable and avoid prompt/theme changes here.
+
+# Add user-local binaries once.
+if [ -d "$HOME/.local/bin" ]; then
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) PATH="$HOME/.local/bin:$PATH" ;;
+  esac
+fi
+export PATH
+
+# Load bash interactive settings for login shells.
+if [ -n "${BASH_VERSION:-}" ] && [ -f "$HOME/.bashrc" ]; then
+  . "$HOME/.bashrc"
+fi
