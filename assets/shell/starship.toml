@@ -1,0 +1,63 @@
+add_newline = false
+
+[cmd_duration]
+min_time = 2000
+format = "took [$duration]($style) "
+
+[directory]
+truncation_length = 3
+truncate_to_repo = false
+
+[git_branch]
+format = "[$symbol$branch(:$remote_branch)]($style) "
+
+[git_status]
+format = '([$all_status$ahead_behind]($style) )'
+
+[python]
+format = '[${symbol}${pyenv_prefix}(${version} )(\($virtualenv\) )]($style)'
+
+[status]
+disabled = false
+format = '[$symbol$status]($style) '
+
+[aws]
+disabled = true
+
+[gcloud]
+disabled = true
+
+[azure]
+disabled = true
+
+[nodejs]
+disabled = true
+
+[ruby]
+disabled = true
+
+[rust]
+disabled = true
+
+[java]
+disabled = true
+
+[golang]
+disabled = true
+
+[php]
+disabled = true
+
+[docker_context]
+disabled = true
+
+[package]
+disabled = true
+
+[conda]
+disabled = false
+ignore_base = false
+format = '([$symbol$environment]($style) )'
+
+[line_break]
+disabled = true

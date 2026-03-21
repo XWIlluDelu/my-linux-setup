@@ -1,0 +1,105 @@
+# Linux Setup Bash Config (Desktop)
+# Keep distro visual style by not overriding PS1.
+
+case $- in
+  *i*) ;;
+  *) return ;;
+esac
+
+if [ -f /etc/bash.bashrc ]; then
+  . /etc/bash.bashrc
+fi
+
+if [ -d "$HOME/.local/bin" ]; then
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) PATH="$HOME/.local/bin:$PATH" ;;
+  esac
+fi
+export PATH
+
+HISTFILE="$HOME/.bash_history"
+HISTSIZE=50000
+HISTFILESIZE=50000
+HISTCONTROL=ignoreboth:erasedups
+shopt -s histappend
+
+# Keep history in sync across terminals, similar to the zsh profile.
+__linux_setup_history_sync() {
+  history -a
+  history -n
+}
+if [[ -n "${PROMPT_COMMAND:-}" ]]; then
+  PROMPT_COMMAND="__linux_setup_history_sync;${PROMPT_COMMAND}"
+else
+  PROMPT_COMMAND="__linux_setup_history_sync"
+fi
+export PROMPT_COMMAND
+
+# Modern CLI Replacements with graceful fallback
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza --icons --git --group-directories-first'
+  alias ll='eza -al --icons --git --group-directories-first'
+  alias la='eza -A --icons --git --group-directories-first'
+  alias l='eza -C --icons --git --group-directories-first'
+else
+  alias ls='ls --color=auto'
+  alias ll='ls -alFh'
+  alias la='ls -A'
+  alias l='ls -CF'
+fi
+
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+
+if command -v rg >/dev/null 2>&1; then
+  alias grep='rg --color=auto'
+  alias fgrep='rg -F --color=auto'
+  alias egrep='rg -e --color=auto'
+else
+  alias grep='grep --color=auto'
+  alias fgrep='fgrep --color=auto'
+  alias egrep='egrep --color=auto'
+fi
+
+if command -v batcat >/dev/null 2>&1; then
+  alias cat='batcat --paging=never -p'
+elif command -v bat >/dev/null 2>&1; then
+  alias cat='bat --paging=never -p'
+fi
+
+if command -v fdfind >/dev/null 2>&1; then
+  alias find='fdfind'
+elif command -v fd >/dev/null 2>&1; then
+  alias find='fd'
+fi
+
+if command -v trash-put >/dev/null 2>&1; then
+  alias rm='trash-put'
+  alias tl='trash-list'
+  alias trestore='trash-restore'
+  alias tempty='trash-empty'
+fi
+
+alias df='df -h'
+alias du='du -h'
+alias free='free -h'
+alias ip='ip -c'
+
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline --graph --decorate -20'
+alias gd='git diff'
+
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  . "$NVM_DIR/nvm.sh"
+  [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+fi
+
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+  . /usr/share/bash-completion/bash_completion
+fi
