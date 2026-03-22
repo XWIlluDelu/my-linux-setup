@@ -76,7 +76,33 @@ mark_repo_failure() {
   fi
 }
 
+prune_conflicting_microsoft_sources() {
+  local changed=0
+
+  # Some systems already ship deb822 source files for Microsoft repos with a
+  # different Signed-By keyring path. Keep one canonical source definition to
+  # avoid apt errors like:
+  # "Conflicting values set for option Signed-By ..."
+  if [[ -f "$VSCODE_DEB822_LIST" ]]; then
+    info "Removing conflicting VS Code source definition: $VSCODE_DEB822_LIST"
+    as_root rm -f "$VSCODE_DEB822_LIST"
+    changed=1
+  fi
+
+  if [[ -f "/etc/apt/sources.list.d/microsoft-edge.sources" ]]; then
+    info "Removing conflicting Edge source definition: /etc/apt/sources.list.d/microsoft-edge.sources"
+    as_root rm -f "/etc/apt/sources.list.d/microsoft-edge.sources"
+    changed=1
+  fi
+
+  if [[ "$changed" -eq 1 ]]; then
+    info "Removed conflicting Microsoft source definitions before apt refresh."
+  fi
+}
+
 setup_microsoft_repos() {
+  prune_conflicting_microsoft_sources
+
   info "[1/4] Install Microsoft repository prerequisites"
   apt_noninteractive update
   apt_noninteractive install -y ca-certificates curl gpg
@@ -88,10 +114,6 @@ setup_microsoft_repos() {
 
   info "[3/4] Configure Microsoft APT repositories"
   if [[ "$INSTALL_VSCODE" -eq 1 ]]; then
-    if [[ -f "$VSCODE_DEB822_LIST" ]]; then
-      info "Removing conflicting VS Code source definition: $VSCODE_DEB822_LIST"
-      as_root rm -f "$VSCODE_DEB822_LIST"
-    fi
     printf 'deb [arch=%s signed-by=%s] https://packages.microsoft.com/repos/code stable main\n' \
       "$ARCH" "$KEYRING_PATH" \
       | as_root tee "$VSCODE_LIST" >/dev/null
