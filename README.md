@@ -10,6 +10,25 @@
 
 主入口统一是 `manage.sh`。
 
+## 额外脚本（extras）
+
+`extras/` 下放的是独立工具，不接入 `manage.sh` 主流程，按需单独运行。
+
+### Ghostty 默认终端
+
+把 Ghostty 设为常见 Linux 桌面栈下的默认终端：
+
+```bash
+bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --check
+bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply
+```
+
+如果还想顺手设置 Debian/Ubuntu 的 `x-terminal-emulator`：
+
+```bash
+bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply --set-alternatives
+```
+
 ### 装机流程
 
 Stage 1：转换 Btrfs 布局并重启
