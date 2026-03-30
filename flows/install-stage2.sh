@@ -31,6 +31,9 @@ INSTALL_MAPLE_FONT=0
 INSTALL_MINIFORGE=0
 INSTALL_NVIDIA=1
 
+NVIDIA_ONEPASS_DRIVER_BRANCH="570"
+NVIDIA_ONEPASS_CUDA_FAMILY="12.8"
+
 cleanup() {
   if [[ "${KEEP_STAGE2_PLAN:-0}" != "1" && -n "${PLAN_FILE:-}" && -f "${PLAN_FILE:-}" ]]; then
     rm -f "$PLAN_FILE"
@@ -455,6 +458,11 @@ write_summary_file() {
 }
 
 show_check_preview() {
+  local nvidia_preview
+  nvidia_preview="$ROOT_DIR/drivers/nvidia/install-nvidia-cuda.sh --apply (only when nvidia=yes)"
+  if stage2_should_use_fixed_nvidia_plan; then
+    nvidia_preview="$ROOT_DIR/drivers/nvidia/install-nvidia-cuda.sh --apply --method deb --cuda 12.8 --driver-branch 570 --lock-driver-branch --install-toolkit --allow-unsupported-repo-override (only when nvidia=yes)"
+  fi
   cat <<EOF
 This was a check run. Stage 2 would execute in this order:
 
@@ -466,7 +474,7 @@ This was a check run. Stage 2 would execute in this order:
   6. $ROOT_DIR/tasks/desktop/install-chinese-support.sh --apply
   7. $ROOT_DIR/tasks/apps/install-apt-apps.sh --apply --desktop-essentials $INSTALL_DESKTOP_ESSENTIALS --vscode $INSTALL_VSCODE --edge $INSTALL_EDGE
   8. $ROOT_DIR/tasks/apps/install-external-apps.sh --apply --flatpak $INSTALL_FLATPAK --wechat $INSTALL_WECHAT --clash-verge-rev $INSTALL_CLASH_VERGE_REV --zotero $INSTALL_ZOTERO --obsidian $INSTALL_OBSIDIAN --ghostty $INSTALL_GHOSTTY --maple-font $INSTALL_MAPLE_FONT --miniforge $INSTALL_MINIFORGE
-  9. $ROOT_DIR/drivers/nvidia/install-nvidia-cuda.sh --apply (only when nvidia=yes)
+  9. ${nvidia_preview}
  10. $ROOT_DIR/tasks/system/cleanup-system.sh --apply
 
 At runtime, preflight will check sudo access, apt locks, free space, APT reachability, and GRUB preseed state.
@@ -474,6 +482,36 @@ At runtime, preflight will check sudo access, apt locks, free space, APT reachab
 Default selection:
 EOF
   print_selection_summary
+}
+
+stage2_should_use_fixed_nvidia_plan() {
+  local stage2_os_id="" stage2_version_id=""
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    stage2_os_id="${ID:-}"
+    stage2_version_id="${VERSION_ID:-}"
+  fi
+  [[ "$stage2_os_id" == "ubuntu" && "$stage2_version_id" == "25.10" ]]
+}
+
+build_stage2_nvidia_args() {
+  NVIDIA_ARGS=(--apply)
+  if stage2_should_use_fixed_nvidia_plan; then
+    NVIDIA_ARGS+=(
+      --method deb
+      --cuda "$NVIDIA_ONEPASS_CUDA_FAMILY"
+      --driver-branch "$NVIDIA_ONEPASS_DRIVER_BRANCH"
+      --lock-driver-branch
+      --install-toolkit
+      --allow-unsupported-repo-override
+    )
+    return 0
+  fi
+
+  if [[ "$ASSUME_YES" -eq 1 ]]; then
+    NVIDIA_ARGS+=(--yes)
+  fi
 }
 
 run_stage2_preflight() {
@@ -699,14 +737,14 @@ if ! bash "$ROOT_DIR/tasks/apps/install-external-apps.sh" \
 fi
 
 if [[ "$INSTALL_NVIDIA" -eq 1 ]]; then
-  NVIDIA_ARGS=(--apply)
-  if [[ "$ASSUME_YES" -eq 1 ]]; then
-    NVIDIA_ARGS+=(--yes)
+  build_stage2_nvidia_args
+  if stage2_should_use_fixed_nvidia_plan; then
+    info "Using the repo-validated Ubuntu 25.10 NVIDIA plan: driver ${NVIDIA_ONEPASS_DRIVER_BRANCH}-open + CUDA ${NVIDIA_ONEPASS_CUDA_FAMILY} + NVIDIA repo override."
   fi
   run_continue_step \
     nvidia \
     updated \
-    "[9/10] Launch the interactive NVIDIA driver + CUDA installer" \
+    "[9/10] Install the NVIDIA driver + CUDA stack" \
     bash "$ROOT_DIR/drivers/nvidia/install-nvidia-cuda.sh" "${NVIDIA_ARGS[@]}"
 else
   record_stage2_result nvidia skipped_not_selected "Skipped by stage2 selection."

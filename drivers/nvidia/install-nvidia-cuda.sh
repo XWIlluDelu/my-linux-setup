@@ -19,6 +19,13 @@ INSTALL_TOOLKIT=0
 RESOLVED_CUDA_FAMILY=""
 ALLOW_UNSUPPORTED_CUDA_REPO=0
 
+FORCED_INSTALL_METHOD=""
+FORCED_CUDA_CHOICE=""
+FORCED_DRIVER_BRANCH_CHOICE=""
+FORCED_LOCK_DRIVER_BRANCH=""
+FORCED_INSTALL_TOOLKIT=""
+FORCED_UNSUPPORTED_REPO_OVERRIDE=""
+
 SYSTEM_PRETTY_NAME=""
 SYSTEM_ID=""
 SYSTEM_VERSION_ID=""
@@ -84,11 +91,20 @@ Interactive NVIDIA installer.
 Usage:
   install-nvidia-cuda.sh --check
   install-nvidia-cuda.sh --apply [--yes]
+  install-nvidia-cuda.sh --apply --method deb --cuda 12.8 --driver-branch 570 [options]
 
 Modes:
   --check   Probe official NVIDIA metadata and print the available choices (default)
   --apply   Run the interactive installer
   --yes     Accept the script defaults in apply mode
+
+Options for scripted apply mode:
+  --method deb|run|manual|skip
+  --cuda latest|decide_later|X.Y
+  --driver-branch latest|BRANCH
+  --lock-driver-branch | --no-lock-driver-branch
+  --install-toolkit | --no-install-toolkit
+  --allow-unsupported-repo-override | --no-allow-unsupported-repo-override
 
 Behavior:
   - The package-managed path installs a specific open driver branch, can lock that branch, and optionally installs `cuda-toolkit-X-Y`.
@@ -110,6 +126,18 @@ join_by() {
     out+="$value"
   done
   printf '%s\n' "$out"
+}
+
+array_contains() {
+  local needle item
+  needle="$1"
+  shift || true
+  for item in "$@"; do
+    if [[ "$item" == "$needle" ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 bool_word() {
@@ -675,6 +703,10 @@ resolve_default_driver_branch() {
 collect_install_method() {
   local default_method
   default_method="deb"
+  if [[ -n "$FORCED_INSTALL_METHOD" ]]; then
+    INSTALL_METHOD="$FORCED_INSTALL_METHOD"
+    return 0
+  fi
   if [[ "$ASSUME_YES" -eq 1 ]]; then
     INSTALL_METHOD="$default_method"
     return 0
@@ -694,6 +726,23 @@ collect_cuda_choice() {
   local -a options=()
   latest_family="$(highest_cuda_family)"
   default_choice="latest"
+
+   if [[ -n "$FORCED_CUDA_CHOICE" ]]; then
+    case "$FORCED_CUDA_CHOICE" in
+      latest|decide_later)
+        CUDA_CHOICE="$FORCED_CUDA_CHOICE"
+        return 0
+        ;;
+      *)
+        if array_contains "$FORCED_CUDA_CHOICE" "${CUDA_FAMILIES[@]}"; then
+          CUDA_CHOICE="$FORCED_CUDA_CHOICE"
+          return 0
+        fi
+        die "Unsupported CUDA choice: $FORCED_CUDA_CHOICE"
+        ;;
+    esac
+  fi
+
   case "$INSTALL_METHOD" in
     run)
       prompt_text="Choose the CUDA runfile version to launch."
@@ -774,6 +823,20 @@ collect_driver_branch_for_deb() {
     options+=("${branch}|$(branch_display_label "$branch")|Candidate ${DRIVER_CANDIDATE_VERSION[$branch]}")
   done
 
+  if [[ -n "$FORCED_DRIVER_BRANCH_CHOICE" ]]; then
+    if [[ "$FORCED_DRIVER_BRANCH_CHOICE" == "latest" ]]; then
+      DRIVER_SELECTION_MODE="latest"
+      DRIVER_BRANCH="$latest_branch"
+      return 0
+    fi
+    if ! array_contains "$FORCED_DRIVER_BRANCH_CHOICE" "${compatible_branches[@]}"; then
+      die "Forced driver branch ${FORCED_DRIVER_BRANCH_CHOICE} is incompatible with CUDA choice '${CUDA_CHOICE}'."
+    fi
+    DRIVER_SELECTION_MODE="branch"
+    DRIVER_BRANCH="$FORCED_DRIVER_BRANCH_CHOICE"
+    return 0
+  fi
+
   if [[ "$ASSUME_YES" -eq 1 ]]; then
     DRIVER_BRANCH="$default_branch"
     DRIVER_SELECTION_MODE="branch"
@@ -816,6 +879,10 @@ collect_driver_lock_preference() {
     LOCK_DRIVER_BRANCH=0
     return 0
   fi
+  if [[ -n "$FORCED_LOCK_DRIVER_BRANCH" ]]; then
+    LOCK_DRIVER_BRANCH="$FORCED_LOCK_DRIVER_BRANCH"
+    return 0
+  fi
   if [[ "$ASSUME_YES" -eq 1 ]]; then
     LOCK_DRIVER_BRANCH=0
     return 0
@@ -830,6 +897,10 @@ collect_toolkit_flag_for_deb() {
   local default_flag=1
   if [[ "$CUDA_CHOICE" == "decide_later" ]]; then
     default_flag=0
+  fi
+  if [[ -n "$FORCED_INSTALL_TOOLKIT" ]]; then
+    INSTALL_TOOLKIT="$FORCED_INSTALL_TOOLKIT"
+    return 0
   fi
   if [[ "$ASSUME_YES" -eq 1 ]]; then
     INSTALL_TOOLKIT="$default_flag"
@@ -870,29 +941,48 @@ collect_toolkit_version_after_decide_later() {
 
 maybe_collect_unsupported_repo_override() {
   local default_flag=1
-  [[ -n "$RESOLVED_CUDA_FAMILY" ]] || return 0
   if [[ "$SYSTEM_CURRENT_REPO_SUPPORTED" == "1" ]]; then
     ALLOW_UNSUPPORTED_CUDA_REPO=1
     return 0
   fi
+  if [[ -n "$FORCED_UNSUPPORTED_REPO_OVERRIDE" ]]; then
+    ALLOW_UNSUPPORTED_CUDA_REPO="$FORCED_UNSUPPORTED_REPO_OVERRIDE"
+    if [[ "$ALLOW_UNSUPPORTED_CUDA_REPO" -eq 1 ]]; then
+      [[ -n "$SYSTEM_PREFERRED_REPO_ID" ]] || die "No supported NVIDIA CUDA apt repo was discovered for distro '${SYSTEM_PRETTY_NAME}'."
+    elif [[ -n "$RESOLVED_CUDA_FAMILY" ]]; then
+      INSTALL_TOOLKIT=0
+      RESOLVED_CUDA_FAMILY=""
+    fi
+    return 0
+  fi
   if [[ -z "$SYSTEM_PREFERRED_REPO_ID" ]]; then
-    die "No supported NVIDIA CUDA apt repo was discovered for distro '${SYSTEM_PRETTY_NAME}'."
+    if [[ -n "$RESOLVED_CUDA_FAMILY" ]]; then
+      die "No supported NVIDIA CUDA apt repo was discovered for distro '${SYSTEM_PRETTY_NAME}'."
+    fi
+    ALLOW_UNSUPPORTED_CUDA_REPO=0
+    return 0
   fi
   if [[ "$ASSUME_YES" -eq 1 ]]; then
     ALLOW_UNSUPPORTED_CUDA_REPO=0
-    INSTALL_TOOLKIT=0
-    RESOLVED_CUDA_FAMILY=""
-    warn "Current distro repo is unsupported. Skipping toolkit installation under --yes instead of auto-enabling a repo override."
+    if [[ -n "$RESOLVED_CUDA_FAMILY" ]]; then
+      INSTALL_TOOLKIT=0
+      RESOLVED_CUDA_FAMILY=""
+      warn "Current distro repo is unsupported. Skipping toolkit installation under --yes instead of auto-enabling an NVIDIA repo override."
+    else
+      warn "Current distro repo is unsupported. Staying on the distro NVIDIA driver packages under --yes instead of auto-enabling an NVIDIA repo override."
+    fi
     return 0
   fi
   prompt_bool ALLOW_UNSUPPORTED_CUDA_REPO \
-    "CUDA Repo Override" \
-    "This distro has no official CUDA APT repo.\n\nAllow a toolkit repo override via ${SYSTEM_PREFERRED_REPO_ID}?" \
+    "NVIDIA Repo Override" \
+    "This distro has no official NVIDIA CUDA APT repo.\n\nAllow an NVIDIA repo override via ${SYSTEM_PREFERRED_REPO_ID} for driver and toolkit packages?" \
     "$default_flag"
   if [[ "$ALLOW_UNSUPPORTED_CUDA_REPO" -ne 1 ]]; then
-    INSTALL_TOOLKIT=0
-    RESOLVED_CUDA_FAMILY=""
-    warn "Skipping toolkit installation because the NVIDIA apt repo override was declined."
+    if [[ -n "$RESOLVED_CUDA_FAMILY" ]]; then
+      INSTALL_TOOLKIT=0
+      RESOLVED_CUDA_FAMILY=""
+      warn "Skipping toolkit installation because the NVIDIA apt repo override was declined."
+    fi
   fi
 }
 
@@ -1138,7 +1228,7 @@ print_manual_plan() {
       printf '  - deb toolkit package: %s (%s)\n' "$package_name" "${CUDA_PACKAGE_VERSION[$family]}"
     fi
     if [[ "$SYSTEM_CURRENT_REPO_SUPPORTED" != "1" && -n "$SYSTEM_PREFERRED_REPO_ID" ]]; then
-      printf '  - deb repo override would be required on this system: %s\n' "$SYSTEM_PREFERRED_REPO_ID"
+      printf '  - deb repo override would be available on this system for driver/toolkit packages: %s\n' "$SYSTEM_PREFERRED_REPO_ID"
     fi
     if [[ -n "$runfile_url" ]]; then
       printf '  - runfile: %s\n' "$runfile_url"
@@ -1151,14 +1241,14 @@ print_manual_plan() {
 run_apply_plan() {
   case "$INSTALL_METHOD" in
     deb)
+      if [[ "$ALLOW_UNSUPPORTED_CUDA_REPO" -eq 1 && "$SYSTEM_CURRENT_REPO_SUPPORTED" != "1" && -n "$SYSTEM_PREFERRED_REPO_ID" ]]; then
+        configure_cuda_repo "$SYSTEM_PREFERRED_REPO_ID"
+      fi
       install_open_driver_branch "$DRIVER_BRANCH"
       if [[ "$LOCK_DRIVER_BRANCH" -eq 1 ]]; then
         hold_driver_branch_packages "$DRIVER_BRANCH"
       fi
       if [[ "$INSTALL_TOOLKIT" -eq 1 && -n "$RESOLVED_CUDA_FAMILY" ]]; then
-        if [[ "$ALLOW_UNSUPPORTED_CUDA_REPO" -eq 1 && -n "$SYSTEM_PREFERRED_REPO_ID" ]]; then
-          configure_cuda_repo "$SYSTEM_PREFERRED_REPO_ID"
-        fi
         install_cuda_toolkit_deb "$RESOLVED_CUDA_FAMILY"
       fi
       ;;
@@ -1189,6 +1279,46 @@ parse_args() {
         ;;
       --yes)
         ASSUME_YES=1
+        ;;
+      --method)
+        [[ $# -ge 2 ]] || die "--method requires a value"
+        case "$2" in
+          deb|run|manual|skip)
+            FORCED_INSTALL_METHOD="$2"
+            ;;
+          *)
+            die "--method must be one of: deb, run, manual, skip"
+            ;;
+        esac
+        shift
+        ;;
+      --cuda)
+        [[ $# -ge 2 ]] || die "--cuda requires a value"
+        FORCED_CUDA_CHOICE="$2"
+        shift
+        ;;
+      --driver-branch)
+        [[ $# -ge 2 ]] || die "--driver-branch requires a value"
+        FORCED_DRIVER_BRANCH_CHOICE="$2"
+        shift
+        ;;
+      --lock-driver-branch)
+        FORCED_LOCK_DRIVER_BRANCH=1
+        ;;
+      --no-lock-driver-branch)
+        FORCED_LOCK_DRIVER_BRANCH=0
+        ;;
+      --install-toolkit)
+        FORCED_INSTALL_TOOLKIT=1
+        ;;
+      --no-install-toolkit)
+        FORCED_INSTALL_TOOLKIT=0
+        ;;
+      --allow-unsupported-repo-override)
+        FORCED_UNSUPPORTED_REPO_OVERRIDE=1
+        ;;
+      --no-allow-unsupported-repo-override)
+        FORCED_UNSUPPORTED_REPO_OVERRIDE=0
         ;;
       -h|--help)
         usage
