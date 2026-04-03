@@ -24,7 +24,6 @@ Modes:
 
 Notes:
   - Does not require sudo (gsettings operates on user-level dconf).
-  - --apply creates a backup script in /tmp before making changes.
   - See AGENT-INSTRUCTIONS.md for JSON format and agent workflow.
 EOF
 }
@@ -205,63 +204,6 @@ if [[ "$MODE" == "apply" ]]; then
     die "Folders JSON file not found: $FOLDERS_JSON"
   fi
 
-  info "Creating backup..."
-  BACKUP_FILE="/tmp/app-grid-backup-$(date +%Y%m%d%H%M%S).sh"
-
-  python3 - "$BACKUP_FILE" << 'PYEOF'
-import os, subprocess, sys
-
-backup_file = sys.argv[1]
-
-def gsettings_get(schema, key, path=None):
-    cmd = ["gsettings", "get"]
-    if path:
-        cmd.append(f"{schema}:{path}")
-        cmd.append(key)
-    else:
-        cmd.extend([schema, key])
-    try:
-        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True).strip()
-    except subprocess.CalledProcessError:
-        return ""
-
-def parse_gsettings_array(raw):
-    if not raw or raw == "@as []":
-        return []
-    items = []
-    for item in raw.strip("[]").split(","):
-        item = item.strip().strip("'")
-        if item:
-            items.append(item)
-    return items
-
-lines = [
-    "#!/usr/bin/env bash",
-    "# Auto-generated backup — run this script to undo app-grid changes",
-    f"# Generated at: {subprocess.check_output(['date'], text=True).strip()}",
-    "",
-]
-
-fc = gsettings_get("org.gnome.desktop.app-folders", "folder-children")
-lines.append(f'gsettings set org.gnome.desktop.app-folders folder-children "{fc}"')
-
-for fid in parse_gsettings_array(fc):
-    path = f"/org/gnome/desktop/app-folders/folders/{fid}/"
-    name = gsettings_get("org.gnome.desktop.app-folders.folder", "name", path)
-    apps = gsettings_get("org.gnome.desktop.app-folders.folder", "apps", path)
-    lines.append(f'gsettings set org.gnome.desktop.app-folders.folder:/org/gnome/desktop/app-folders/folders/{fid}/ name "{name}"')
-    lines.append(f'gsettings set org.gnome.desktop.app-folders.folder:/org/gnome/desktop/app-folders/folders/{fid}/ apps "{apps}"')
-
-layout = gsettings_get("org.gnome.shell", "app-picker-layout")
-lines.append(f'gsettings set org.gnome.shell app-picker-layout "{layout}"')
-
-with open(backup_file, "w") as f:
-    f.write("\n".join(lines) + "\n")
-os.chmod(backup_file, 0o755)
-PYEOF
-
-  info "Backup saved to $BACKUP_FILE"
-
   info "Applying folder definitions from $FOLDERS_JSON..."
   python3 - "$FOLDERS_JSON" << 'PYEOF'
 import json, os, subprocess, sys
@@ -382,6 +324,6 @@ for d in DESKTOP_DIRS:
 print(f"\n[INFO] Remaining orphan icons: {orphan_count}", file=sys.stderr)
 PYEOF
 
-  info "App grid updated. Undo: bash $BACKUP_FILE"
+  info "App grid updated."
   exit 0
 fi

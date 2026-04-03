@@ -47,10 +47,7 @@
     {
       "id": "Utilities",
       "name": "Utilities",
-      "apps": [
-        "org.gnome.Calculator.desktop",
-        "org.gnome.TextEditor.desktop"
-      ]
+      "apps": ["org.gnome.Calculator.desktop", "org.gnome.TextEditor.desktop"]
     }
   ]
 }
@@ -75,6 +72,16 @@
 - 图片查看器（Loupe）、文档查看器（Papers）
 - 帮助（Yelp）、htop、vim、mpv、info
 
+### Online — 在线/网络工具
+
+- WeChat、Clash Verge、远程连接类工具
+- 其他偏“联网服务”而非“系统设置”的桌面应用可优先放这里
+
+### Office — 文档/知识管理
+
+- Obsidian、Zotero、LibreOffice 全家桶
+- 其他笔记、写作、阅读、办公类工具可优先放这里
+
 ### NVIDIA — GPU 开发调试工具
 
 - nvidia-settings、Nsight Compute、Nsight Systems、NVVP
@@ -84,9 +91,22 @@
 
 - Fcitx5 主程序、配置工具、迁移工具、键盘布局查看器
 
+### Media — 媒体播放
+
+- mpv
+- 其他偏播放器而不是编辑器的音视频应用可优先放这里
+
+## 当前偏好补充
+
+- 分类应优先遵从“当前机器已安装的应用”，不要死套固定模板；没有对应应用时文件夹可以省略。
+- 当前用户偏好是保留 `simple-scan`，因此它应优先归入 `Utilities`。
+- 当前用户偏好是保留 `LibreOffice`，并把它与 `Obsidian`、`Zotero` 一起优先归到 `Office`。
+- 当前用户偏好是尽量减少低价值默认小工具；若系统里仍出现 `xterm`、`uxterm`、`Text Editor`、`Calculator`，它们属于低优先级保留项，不应优先占据显眼位置。
+- 若 `WeChat`、`Clash Verge`、远程连接类应用同时存在，优先放进 `Online`，不要混入 `System`。
+- 当前用户偏好是不保留 `Showtime`；若它暂时仍存在，可临时放进 `Media`，但清理脚本应默认移除它。
+
 ## 注意事项
 
 - 运行分析和应用都**不需要 sudo**（gsettings 操作用户级 dconf）
-- 每次 `--apply` 会自动创建备份脚本到 `/tmp/app-grid-backup-*.sh`
 - 安装/卸载应用后分类列表可能过时，应重新运行分析
-- 文件夹排列顺序：System → Utilities → NVIDIA → Fcitx → 其余游离图标
+- 文件夹排列顺序优先建议：System → Utilities → Online → Office → NVIDIA → Fcitx → Media → 其余游离图标
