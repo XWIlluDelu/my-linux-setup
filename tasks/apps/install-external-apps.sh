@@ -981,7 +981,12 @@ install_obsidian_appimage() {
   fi
 
   target_path="$ASSET_CACHE_DIR/$asset_name"
-  if ! download_url_with_speed_guard "$official_url" "$target_path"; then
+  if [[ "$official_url" == https://github.com/* ]]; then
+    if ! github_release_download_asset "$official_url" "" "$target_path"; then
+      record_stage2_result obsidian failed "Failed to download the official Obsidian AppImage ${release_version}."
+      return 0
+    fi
+  elif ! download_url_with_speed_guard "$official_url" "$target_path"; then
     record_stage2_result obsidian failed "Failed to download the official Obsidian AppImage ${release_version}."
     return 0
   fi
@@ -1032,7 +1037,12 @@ install_obsidian_official_deb() {
   fi
 
   target_path="$DEB_CACHE_DIR/$(basename_from_url "$official_url")"
-  if ! download_url_with_speed_guard "$official_url" "$target_path"; then
+  if [[ "$official_url" == https://github.com/* ]]; then
+    if ! github_release_download_asset "$official_url" "" "$target_path"; then
+      record_stage2_result obsidian failed "Failed to download the official Obsidian .deb."
+      return 0
+    fi
+  elif ! download_url_with_speed_guard "$official_url" "$target_path"; then
     record_stage2_result obsidian failed "Failed to download the official Obsidian .deb."
     return 0
   fi

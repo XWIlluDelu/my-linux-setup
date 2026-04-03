@@ -240,8 +240,9 @@ install_edge() {
 }
 
 purge_debian_desktop_defaults() {
-  local -a purge_candidates installed_packages protected_metapackages safe_packages skipped_packages
-  local status message
+  local -a purge_candidates installed_packages
+  local -a removed_metapackages=()
+  local status message pkg
 
   detect_os_release
   if [[ "$DISTRO_ID" != "debian" ]]; then
@@ -262,16 +263,20 @@ purge_debian_desktop_defaults() {
     gnome-tour
     gnome-weather
     gnome-characters
+    gnome-calculator
+    gnome-software
+    gnome-software-plugin-deb
+    gnome-software-plugin-fwupd
+    gnome-text-editor
     loupe
+    malcontent
+    malcontent-gui
     rhythmbox
-    simple-scan
+    shotwell
+    showtime
     totem
+    xterm
     yelp
-  )
-  protected_metapackages=(
-    gnome
-    gnome-core
-    task-gnome-desktop
   )
   installed_packages=()
 
@@ -286,40 +291,29 @@ purge_debian_desktop_defaults() {
     return 0
   fi
 
-  safe_packages=()
-  skipped_packages=()
-
-  while IFS= read -r pkg; do
-    if would_remove_protected_metapackages protected_metapackages "${safe_packages[@]}" "$pkg"; then
-      skipped_packages+=("$pkg")
-    else
-      safe_packages+=("$pkg")
+  for pkg in gnome gnome-core task-gnome-desktop; do
+    if apt_noninteractive_simulate purge -y "${installed_packages[@]}" 2>/dev/null \
+      | grep -Eq "^(Remv|Purg) ${pkg}([ :]|$)"; then
+      removed_metapackages+=("$pkg")
     fi
-  done < <(printf '%s\n' "${installed_packages[@]}")
+  done
 
-  if [[ "${#safe_packages[@]}" -eq 0 ]]; then
-    message="Skipped Debian desktop cleanup because every candidate would remove protected desktop metapackages: ${installed_packages[*]}"
-    warn "$message"
-    record_stage2_result desktop_cleanup already_present "$message"
-    return 0
+  info "[debian] Purge unwanted default desktop apps: ${installed_packages[*]}"
+  if [[ "${#removed_metapackages[@]}" -gt 0 ]]; then
+    warn "[debian] This cleanup will also remove desktop metapackages that only track the default GNOME app bundle: ${removed_metapackages[*]}"
   fi
 
-  info "[debian] Purge unwanted default desktop apps: ${safe_packages[*]}"
-  if [[ "${#skipped_packages[@]}" -gt 0 ]]; then
-    warn "[debian] Keeping these packages to avoid removing GNOME metapackages: ${skipped_packages[*]}"
-  fi
-
-  if apt_noninteractive purge -y "${safe_packages[@]}"; then
+  if apt_noninteractive purge -y "${installed_packages[@]}"; then
     status="updated"
-    message="Purged Debian desktop defaults: ${safe_packages[*]}"
-    if [[ "${#skipped_packages[@]}" -gt 0 ]]; then
-      message="${message}; kept to preserve desktop metapackages: ${skipped_packages[*]}"
+    message="Purged Debian desktop defaults: ${installed_packages[*]}"
+    if [[ "${#removed_metapackages[@]}" -gt 0 ]]; then
+      message="${message}; also removed GNOME metapackages: ${removed_metapackages[*]}"
     fi
     record_stage2_result desktop_cleanup "$status" "$message"
   else
-    message="Failed to purge Debian desktop defaults: ${safe_packages[*]}"
-    if [[ "${#skipped_packages[@]}" -gt 0 ]]; then
-      message="${message}; skipped to preserve desktop metapackages: ${skipped_packages[*]}"
+    message="Failed to purge Debian desktop defaults: ${installed_packages[*]}"
+    if [[ "${#removed_metapackages[@]}" -gt 0 ]]; then
+      message="${message}; attempted cleanup would also remove GNOME metapackages: ${removed_metapackages[*]}"
     fi
     record_stage2_result desktop_cleanup failed "$message"
   fi
@@ -347,22 +341,6 @@ apt_noninteractive_simulate() {
       -o Dpkg::Options::=--force-confold \
       "$@"
   fi
-}
-
-would_remove_protected_metapackages() {
-  local -n protected_ref="$1"
-  shift
-
-  local simulation pkg
-  simulation="$(apt_noninteractive_simulate purge -y "$@" 2>/dev/null || true)"
-
-  for pkg in "${protected_ref[@]}"; do
-    if grep -Eq "^(Remv|Purg) ${pkg}([ :]|$)" <<< "$simulation"; then
-      return 0
-    fi
-  done
-
-  return 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -415,7 +393,7 @@ This was a check run. The script would:
   2. Install desktop essentials when selected: mpv, gnome-tweaks, gnome-shell-extension-manager
   3. Install Visual Studio Code when selected
   4. Install Microsoft Edge when selected and supported
-  5. On Debian, purge unwanted default desktop apps if present: evolution, firefox-esr, epiphany-browser, gnome-calendar, gnome-contacts, gnome-clocks, gnome-maps, gnome-music, gnome-snapshot, gnome-sound-recorder, gnome-tour, gnome-weather, gnome-characters, loupe, rhythmbox, simple-scan, totem, yelp
+  5. On Debian, purge unwanted default desktop apps if present: evolution, firefox-esr, epiphany-browser, gnome-calendar, gnome-contacts, gnome-clocks, gnome-maps, gnome-music, gnome-snapshot, gnome-sound-recorder, gnome-tour, gnome-weather, gnome-characters, gnome-calculator, gnome-software, gnome-software-plugin-deb, gnome-software-plugin-fwupd, gnome-text-editor, loupe, malcontent, malcontent-gui, rhythmbox, shotwell, showtime, totem, xterm, yelp
 
 Current selection:
   - desktop_essentials=$DESKTOP_ESSENTIALS

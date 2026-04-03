@@ -573,11 +573,39 @@ driver_branch_package_regex() {
 }
 
 collect_installed_packages_for_branch() {
-  local branch regex
+  local branch regex pkg version
   branch="$1"
   regex="$(driver_branch_package_regex "$branch")"
   [[ "${#APT_NVIDIA_PACKAGES[@]}" -gt 0 ]] || return 0
-  printf '%s\n' "${APT_NVIDIA_PACKAGES[@]}" | grep -E "$regex" | sort -u || true
+  for pkg in "${APT_NVIDIA_PACKAGES[@]}"; do
+    if [[ "$pkg" =~ $regex ]]; then
+      printf '%s\n' "$pkg"
+      continue
+    fi
+
+    version="$(dpkg-query -W -f='${Version}\n' "$pkg" 2>/dev/null || true)"
+    if [[ -n "$version" && "$version" == "${branch}."* ]]; then
+      printf '%s\n' "$pkg"
+    fi
+  done | sort -u
+}
+
+open_driver_package_name_for_branch() {
+  local branch package
+  branch="$1"
+  package="nvidia-driver-${branch}-open"
+
+  if package_available "$package"; then
+    printf '%s\n' "$package"
+    return 0
+  fi
+
+  if package_available nvidia-open && [[ -n "${DRIVER_CANDIDATE_VERSION[$branch]:-}" ]]; then
+    printf 'nvidia-open\n'
+    return 0
+  fi
+
+  return 1
 }
 
 unhold_installed_nvidia_packages() {
@@ -1109,19 +1137,37 @@ ensure_driver_prereqs() {
 }
 
 install_open_driver_branch() {
-  local branch package
+  local branch package candidate_version
+  local -a install_args
   branch="$1"
-  package="nvidia-driver-${branch}-open"
+  package="$(open_driver_package_name_for_branch "$branch")" || die "No apt package could be resolved for NVIDIA open driver branch ${branch}."
 
   ensure_sudo_session
   detect_existing_nvidia_state
   unhold_installed_nvidia_packages || warn "Failed to remove some existing NVIDIA package holds before install."
   preseed_grub_if_possible
   ensure_driver_prereqs
-  apt_noninteractive install -y "$package"
+
+  if [[ "$package" == "nvidia-open" ]]; then
+    candidate_version="${DRIVER_CANDIDATE_VERSION[$branch]:-}"
+    [[ -n "$candidate_version" ]] || die "No candidate version was recorded for NVIDIA branch ${branch}."
+    install_args=(
+      "nvidia-open=${candidate_version}"
+      "nvidia-driver=${candidate_version}"
+      "nvidia-kernel-open-dkms=${candidate_version}"
+      "nvidia-driver-cuda=${candidate_version}"
+      "nvidia-settings=${candidate_version}"
+      "nvidia-xconfig=${candidate_version}"
+    )
+    apt_noninteractive install -y --allow-downgrades "${install_args[@]}"
+    info "Installed open driver branch ${branch} via version-pinned nvidia-open packages (${candidate_version})."
+  else
+    apt_noninteractive install -y "$package"
+    info "Installed open driver package ${package}."
+  fi
+
   rebuild_initramfs_if_possible || true
   rebuild_grub_if_possible || true
-  info "Installed open driver package ${package}."
 }
 
 hold_driver_branch_packages() {
@@ -1212,11 +1258,17 @@ install_cuda_toolkit_runfile() {
 }
 
 print_manual_plan() {
-  local family runfile_url package_name
+  local family runfile_url package_name package_version
   printf 'Preview plan:\n'
   printf '  - preview_only=yes\n'
   if [[ -n "$DRIVER_BRANCH" ]]; then
-    printf '  - deb/open-driver package: nvidia-driver-%s-open\n' "$DRIVER_BRANCH"
+    package_name="$(open_driver_package_name_for_branch "$DRIVER_BRANCH" 2>/dev/null || true)"
+    package_version="${DRIVER_CANDIDATE_VERSION[$DRIVER_BRANCH]:-}"
+    if [[ "$package_name" == "nvidia-open" && -n "$package_version" ]]; then
+      printf '  - deb/open-driver package: nvidia-open (= %s)\n' "$package_version"
+    else
+      printf '  - deb/open-driver package: nvidia-driver-%s-open\n' "$DRIVER_BRANCH"
+    fi
     printf '  - lock selected driver branch: %s\n' "$(bool_word "$LOCK_DRIVER_BRANCH")"
   fi
   if [[ -n "$RESOLVED_CUDA_FAMILY" ]]; then

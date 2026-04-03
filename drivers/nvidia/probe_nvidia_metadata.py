@@ -291,11 +291,22 @@ def apt_candidate_version(package_name: str) -> Optional[str]:
 
 
 def detect_installed_open_branch() -> Optional[str]:
-    output = run_command(["dpkg-query", "-W", "-f=${Package}\n", "nvidia-driver-*-open"])
+    output = run_command(["dpkg-query", "-W", "-f=${Package}\t${Version}\n", "nvidia-open", "nvidia-driver-*-open"])
     for line in output.splitlines():
-        match = re.match(r"nvidia-driver-(\d+)-open$", line.strip())
+        line = line.strip()
+        if not line:
+            continue
+        if "\t" in line:
+            package, version = line.split("\t", 1)
+        else:
+            package, version = line, ""
+        match = re.match(r"nvidia-driver-(\d+)-open$", package)
         if match:
             return match.group(1)
+        if package == "nvidia-open":
+            numeric = extract_numeric_driver(version)
+            if numeric:
+                return numeric.split(".", 1)[0]
     return None
 
 
@@ -341,6 +352,45 @@ def parse_ubuntu_drivers() -> Tuple[List[Dict[str, object]], Optional[str]]:
 
 
 def fallback_open_drivers() -> List[Dict[str, object]]:
+    output = run_command(["bash", "-lc", "apt-cache show nvidia-open 2>/dev/null"])
+    rows_by_branch: Dict[str, Dict[str, object]] = {}
+    version: Optional[str] = None
+
+    for line in output.splitlines():
+        if not line.strip():
+            version = None
+            continue
+        if line.startswith("Version: "):
+            version = line.split(":", 1)[1].strip()
+            continue
+        if not line.startswith("Provides: "):
+            continue
+        if version is None:
+            continue
+        match = re.search(r"nvidia-open-(\d+)", line)
+        if not match:
+            continue
+        branch = match.group(1)
+        candidate = {
+            "branch": branch,
+            "package": "nvidia-open",
+            "candidate_version": version,
+            "recommended": False,
+        }
+        existing = rows_by_branch.get(branch)
+        if not existing:
+            rows_by_branch[branch] = candidate
+            continue
+        current_numeric = extract_numeric_driver(str(existing.get("candidate_version", "")) or "")
+        candidate_numeric = extract_numeric_driver(version)
+        if candidate_numeric and (not current_numeric or version_tuple(candidate_numeric) > version_tuple(current_numeric)):
+            rows_by_branch[branch] = candidate
+
+    if rows_by_branch:
+        rows = list(rows_by_branch.values())
+        rows.sort(key=lambda item: int(item["branch"]))
+        return rows
+
     output = run_command(["bash", "-lc", "apt-cache search '^nvidia-driver-[0-9]+-open$' | sort -V"])
     rows: List[Dict[str, object]] = []
     for line in output.splitlines():
@@ -365,7 +415,7 @@ def detect_open_drivers() -> Dict[str, object]:
     for row in rows:
         branch = row["branch"]
         package = row["package"]
-        candidate_version = apt_candidate_version(package)
+        candidate_version = row.get("candidate_version") or apt_candidate_version(package)
         if not candidate_version:
             continue
         candidate_numeric = extract_numeric_driver(candidate_version)

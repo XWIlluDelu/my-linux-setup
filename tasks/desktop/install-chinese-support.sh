@@ -258,7 +258,22 @@ info "[4/10] Set fcitx5 as the input method framework"
 set_input_method_framework
 
 info "[5/10] Write GNOME Wayland-friendly Fcitx session environment"
-mkdir -p "$HOME/.config/environment.d" "$HOME/.config/gtk-3.0" "$HOME/.config/gtk-4.0"
+mkdir -p "$HOME/.config/autostart" "$HOME/.config/environment.d" "$HOME/.config/gtk-3.0" "$HOME/.config/gtk-4.0"
+
+cat > "$HOME/.config/autostart/org.fcitx.Fcitx5.desktop" <<'EOF'
+[Desktop Entry]
+Name=Fcitx 5
+Comment=Start Input Method
+Exec=/usr/bin/fcitx5
+Icon=fcitx
+Terminal=false
+Type=Application
+Categories=System;Utility;
+StartupNotify=false
+X-GNOME-AutoRestart=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Notify=false
+EOF
 
 cat > "$HOME/.config/environment.d/fcitx5.conf" <<'EOF'
 XMODIFIERS=@im=fcitx
@@ -320,6 +335,13 @@ patch:
   schema_list:
     - schema: rime_ice
   default_schema: rime_ice
+  ascii_composer/good_old_caps_lock: true
+  ascii_composer/switch_key:
+    Caps_Lock: clear
+    Shift_L: inline_ascii
+    Shift_R: commit_text
+    Control_L: noop
+    Control_R: noop
 EOF
 
 info "[8/10] Apply custom fcitx5 configurations"
