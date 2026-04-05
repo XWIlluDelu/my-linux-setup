@@ -101,6 +101,7 @@
 - 分类应优先遵从“当前机器已安装的应用”，不要死套固定模板；没有对应应用时文件夹可以省略。
 - 当前用户偏好是保留 `simple-scan`，因此它应优先归入 `Utilities`。
 - 当前用户偏好是保留 `LibreOffice`，并把它与 `Obsidian`、`Zotero` 一起优先归到 `Office`。
+- 当前用户偏好是文档查看器优先保留较新的 `papers`，但只在系统里同时存在 `evince` 和 `papers` 时，才把 `evince` 视为可清理项；若两者只剩其一，则应保留现有那一个。
 - 当前用户偏好是尽量减少低价值默认小工具；若系统里仍出现 `xterm`、`uxterm`、`Text Editor`、`Calculator`，它们属于低优先级保留项，不应优先占据显眼位置。
 - 若 `WeChat`、`Clash Verge`、远程连接类应用同时存在，优先放进 `Online`，不要混入 `System`。
 - 当前用户偏好是不保留 `Showtime`；若它暂时仍存在，可临时放进 `Media`，但清理脚本应默认移除它。

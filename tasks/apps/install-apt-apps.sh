@@ -280,6 +280,12 @@ purge_debian_desktop_defaults() {
   )
   installed_packages=()
 
+  # Keep a single document viewer when only one remains. Evince becomes a
+  # cleanup candidate only when Papers is also installed.
+  if dpkg_package_installed evince && dpkg_package_installed papers; then
+    purge_candidates+=(evince)
+  fi
+
   for pkg in "${purge_candidates[@]}"; do
     if dpkg_package_installed "$pkg"; then
       installed_packages+=("$pkg")
@@ -394,6 +400,7 @@ This was a check run. The script would:
   3. Install Visual Studio Code when selected
   4. Install Microsoft Edge when selected and supported
   5. On Debian, purge unwanted default desktop apps if present: evolution, firefox-esr, epiphany-browser, gnome-calendar, gnome-contacts, gnome-clocks, gnome-maps, gnome-music, gnome-snapshot, gnome-sound-recorder, gnome-tour, gnome-weather, gnome-characters, gnome-calculator, gnome-software, gnome-software-plugin-deb, gnome-software-plugin-fwupd, gnome-text-editor, loupe, malcontent, malcontent-gui, rhythmbox, shotwell, showtime, totem, xterm, yelp
+     Additionally on Debian, evince is treated as redundant only when papers is also installed.
 
 Current selection:
   - desktop_essentials=$DESKTOP_ESSENTIALS
