@@ -1,37 +1,42 @@
 # ghostty-default-terminal
 
-把 Ghostty 设为常见 Linux 桌面栈下的默认终端，作为独立 extra 脚本存在，不接入 `manage.sh` 主流程。
+把 `ghostty` 设为 GNOME 下的默认终端。这里只保留当前验证过的最小方案。
 
-## 用法
+## 原则
 
-预览：
+- GNOME 默认终端继续走 `xdg-terminal-exec`
+- `xdg-terminal-exec` 的用户级目标改成 `ghostty`
+- 这里只处理“默认终端”，不处理文件浏览器右键菜单增强
 
-```bash
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --check
-```
+## 步骤
 
-应用：
-
-```bash
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply
-```
-
-如果还想顺手设置 Debian/Ubuntu 的 `x-terminal-emulator`：
+确认 `ghostty` 的 desktop file 存在：
 
 ```bash
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply --set-alternatives
+ls /usr/share/applications/com.mitchellh.ghostty.desktop
 ```
 
-## 覆盖范围
+写入 `xdg-terminal-exec` 用户配置：
 
-- **GNOME / Nautilus**：优先走 `xdg-terminal-exec`
-- **KDE / Dolphin**：设置默认外部终端
-- **XFCE / Thunar**：写 helper 配置
-- **Cinnamon / Nemo**：best-effort
+```bash
+mkdir -p ~/.config
+printf '%s\n' 'com.mitchellh.ghostty.desktop' > ~/.config/xdg-terminals.list
+printf '%s\n' 'com.mitchellh.ghostty.desktop' > ~/.config/gnome-xdg-terminals.list
+rm -f ~/.cache/xdg-terminal-exec
+```
 
-## 注意
+## 验证
 
-- 建议直接以目标桌面用户身份运行，不要用 root 用户改到错误的 `$HOME`。
-- 这件事主要和**桌面环境 / 文件管理器**有关，不只是 distro 本身。
-- GNOME/Nautilus 在不同发行版上的实现会有 patch 差异；脚本已经尽量做了兼容分支。
-- Nemo 对 Ghostty 的支持不完全稳定，因此 Cinnamon 分支不能保证 100% 生效。
+```bash
+xdg-terminal-exec --print-id
+xdg-terminal-exec --print-cmd --dir="$HOME"
+```
+
+预期：
+
+- `xdg-terminal-exec --print-id` 返回 `com.mitchellh.ghostty.desktop`
+- `xdg-terminal-exec --print-cmd --dir="$HOME"` 解析到 `/usr/bin/ghostty`
+
+## 相关
+
+如果你还想让 Nautilus 的 `Open in Terminal` 也打开 `ghostty`，以及给右键菜单增加 `Copy Path`，请看单独的 extra：`extras/nautilus-enhancements/README.md`。
