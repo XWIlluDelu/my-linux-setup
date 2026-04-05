@@ -16,18 +16,9 @@
 
 ### Ghostty 默认终端
 
-把 Ghostty 设为常见 Linux 桌面栈下的默认终端：
+把 Ghostty 设为 GNOME 下的默认终端，按 `extras/ghostty-default-terminal/README.md` 中记录的最小步骤手动执行即可。
 
-```bash
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --check
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply
-```
-
-如果还想顺手设置 Debian/Ubuntu 的 `x-terminal-emulator`：
-
-```bash
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply --set-alternatives
-```
+如果还想让 Nautilus 的 `Open in Terminal` 也打开 `ghostty`，以及给右键菜单增加 `Copy Path`，请看 `extras/nautilus-enhancements/README.md`。
 
 ### 装机流程
 
