@@ -187,6 +187,7 @@ detect_installed_apps() {
 
   if detect_managed_shell_env "$TARGET_HOME"; then
     SHELL_ENV_MANAGED_DETECTED=1
+    INSTALL_SHELL_ENV=1
   fi
 
   update_pm="$(detect_update_pkg_manager)"
@@ -374,7 +375,7 @@ collect_selection_with_text() {
   printf '[INFO] Using plain text prompts for app update selection.\n'
   printf '[INFO] Text mode tips: press y/n then Enter for each item, press Ctrl+C to abort at any time.\n'
 
-  prompt_bool_text INSTALL_SHELL_ENV "Install/Update tmux+zsh shell environment assets, starship, and zinit?" "$INSTALL_SHELL_ENV"
+  prompt_bool_text INSTALL_SHELL_ENV "Install/Update managed shell env, modern CLI tools, starship, and zinit?" "$INSTALL_SHELL_ENV"
   prompt_bool_text REDEPLOY_SHELL_CONFIG "Redeploy managed shell config files (.profile/.bashrc/.zshrc/.tmux.conf)?" 0
   prompt_bool_text INSTALL_DESKTOP_ESSENTIALS "Install/Update desktop essentials (mpv, gnome-tweaks, gnome-shell-extension-manager)?" "$INSTALL_DESKTOP_ESSENTIALS"
   prompt_bool_text INSTALL_VSCODE "Install/Update Visual Studio Code?" "$INSTALL_VSCODE"
@@ -393,7 +394,7 @@ collect_selection_with_whiptail() {
   local selected_tags=()
   local -a args=()
 
-  args+=("shell_env" "tmux/zsh/starship/zinit components and state" "$( [[ "$INSTALL_SHELL_ENV" -eq 1 ]] && printf ON || printf OFF )")
+  args+=("shell_env" "tmux/zsh + modern CLI tools + starship/zinit + managed shell state" "$( [[ "$INSTALL_SHELL_ENV" -eq 1 ]] && printf ON || printf OFF )")
   args+=("redeploy_shell_config" "Overwrite managed .profile/.bashrc/.zshrc/.tmux.conf" OFF)
   args+=("desktop_essentials" "mpv + Tweaks + Extension Manager" "$( [[ "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 ]] && printf ON || printf OFF )")
   args+=("vscode" "Visual Studio Code from the Microsoft repository" "$( [[ "$INSTALL_VSCODE" -eq 1 ]] && printf ON || printf OFF )")
@@ -457,9 +458,7 @@ selected_updates_need_sudo() {
   fi
 
   if [[ "$INSTALL_SHELL_ENV" -eq 1 ]]; then
-    if [[ "$SHELL_ENV_MANAGED_DETECTED" -ne 1 || "$(id -un)" != "$TARGET_USER" ]]; then
-      return 0
-    fi
+    return 0
   fi
 
   return 1
@@ -641,9 +640,19 @@ TARGET_HOME="$(resolve_target_home "$TARGET_USER")"
 detect_installed_apps
 
 if [[ "$RUN_MODE" != "apply" ]]; then
+  shell_env_preview_cmd="$ROOT_DIR/tasks/shell/install-shell-environment.sh --apply --update-only"
+  if [[ "$INSTALL_SHELL_ENV" -eq 1 ]]; then
+    local_profile="$(shell_env_profile_from_state_or_marker "$TARGET_HOME" 2>/dev/null || echo desktop)"
+    if [[ "$SHELL_ENV_MANAGED_DETECTED" -eq 1 ]]; then
+      shell_env_preview_cmd="$ROOT_DIR/tasks/shell/install-shell-environment.sh --apply --update-only --profile $local_profile"
+    else
+      shell_env_preview_cmd="$ROOT_DIR/tasks/shell/install-shell-environment.sh --apply --profile $local_profile"
+    fi
+  fi
+
   printf 'This was a check run. The flow would execute:\n\n'
-  printf '  1. %s/tasks/shell/install-shell-environment.sh --apply --update-only (shell_env=%s)\n' \
-    "$ROOT_DIR" \
+  printf '  1. %s (shell_env=%s)\n' \
+    "$shell_env_preview_cmd" \
     "$INSTALL_SHELL_ENV"
   printf '  2. %s/tasks/apps/install-apt-apps.sh --apply --desktop-essentials %s --vscode %s --edge %s\n' \
     "$ROOT_DIR" \
@@ -711,7 +720,7 @@ if [[ "$INSTALL_SHELL_ENV" -eq 1 ]]; then
     warn "The shell environment update step exited unexpectedly."
     record_stage2_result shell_env failed "The shell environment update step exited unexpectedly."
   else
-    record_stage2_result shell_env updated "Shell environment components refreshed."
+    record_stage2_result shell_env updated "Shell environment tools and managed components refreshed."
   fi
 fi
 

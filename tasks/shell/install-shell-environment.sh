@@ -30,7 +30,7 @@ Usage:
 Notes:
   - Default mode is --check.
   - Package install path supports apt, dnf, zypper, and pacman.
-  - `--update-only` refreshes managed shell components without installing packages or changing the login shell.
+  - `--update-only` refreshes managed shell components, ensures shell tool packages, and skips login-shell changes.
   - `--config-only` only rewrites managed shell config files and state markers.
 EOF
 }
@@ -57,19 +57,68 @@ shell_pkg_manager_label() {
   esac
 }
 
+shell_package_candidates() {
+  local tool_key
+  tool_key="$1"
+
+  case "$tool_key:$PKG_MANAGER" in
+    eza:apt-get|eza:dnf|eza:zypper|eza:pacman)
+      printf '%s\n' eza
+      ;;
+    bat:apt-get|bat:dnf|bat:zypper|bat:pacman)
+      printf '%s\n' bat batcat
+      ;;
+    ripgrep:apt-get|ripgrep:dnf|ripgrep:zypper|ripgrep:pacman)
+      printf '%s\n' ripgrep
+      ;;
+    fd:apt-get|fd:dnf)
+      printf '%s\n' fd-find fd
+      ;;
+    fd:zypper|fd:pacman)
+      printf '%s\n' fd fd-find
+      ;;
+    fzf:apt-get|fzf:dnf|fzf:zypper|fzf:pacman)
+      printf '%s\n' fzf
+      ;;
+    trash-cli:apt-get|trash-cli:dnf|trash-cli:zypper|trash-cli:pacman)
+      printf '%s\n' trash-cli
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+resolve_shell_package() {
+  local tool_key candidate
+  tool_key="$1"
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    if package_available "$candidate" "$PKG_MANAGER"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(shell_package_candidates "$tool_key")
+
+  return 1
+}
+
 install_shell_packages() {
-  local optional_pkg
-  local -a packages
+  local tool_key resolved_package
+  local -a packages modern_tool_keys
 
   detect_shell_pkg_manager
   [[ -n "$PKG_MANAGER" ]] || die "No supported package manager detected. Supported: apt, dnf, zypper, pacman."
 
   packages=(zsh tmux)
-  for optional_pkg in fzf trash-cli; do
-    if package_available "$optional_pkg" "$PKG_MANAGER"; then
-      packages+=("$optional_pkg")
+  modern_tool_keys=(eza ripgrep bat fd fzf trash-cli)
+
+  for tool_key in "${modern_tool_keys[@]}"; do
+    if resolved_package="$(resolve_shell_package "$tool_key")"; then
+      packages+=("$resolved_package")
     else
-      warn "[shell] Package not available via ${PKG_MANAGER}, skipped: $optional_pkg"
+      warn "[shell] No supported package candidate available via ${PKG_MANAGER}, skipped tool: $tool_key"
     fi
   done
 
@@ -270,6 +319,10 @@ if [[ "$UPDATE_ONLY" -eq 1 ]] && ! detect_managed_shell_env "$TARGET_HOME"; then
   die "shell_env is not managed by linux-setup for $TARGET_HOME."
 fi
 
+if [[ "$CONFIG_ONLY" -eq 1 ]] && ! detect_managed_shell_env "$TARGET_HOME"; then
+  die "shell_env config-only refresh requires an existing linux-setup-managed shell environment at $TARGET_HOME."
+fi
+
 if [[ "$APPLY" -ne 1 ]]; then
   if [[ "$CONFIG_ONLY" -eq 1 ]]; then
     cat <<EOF
@@ -283,13 +336,13 @@ EOF
   else
     cat <<EOF
 This was a check run. The script would:
-  1. $( [[ "$UPDATE_ONLY" -eq 1 ]] && printf 'Skip package installation and default-shell changes' || printf 'Ensure shell packages are installed via %s' "$(shell_pkg_manager_label)" )
+  1. Ensure shell packages are installed via $(shell_pkg_manager_label)
   2. Remove existing managed shell config files and user-space shell components in ${TARGET_HOME}
   3. Reinstall starship in ${TARGET_HOME}/.local/bin
   4. Reinstall zinit in ${TARGET_HOME}/.local/share/zinit/zinit.git
   5. Write managed ~/.profile, ${PROFILE}-specific ~/.bashrc and ~/.zshrc, ~/.tmux.conf, ~/.config/starship.toml, and shell state markers
-  6. $( [[ "$UPDATE_ONLY" -eq 1 ]] && printf 'Preload zsh plugins for the target user' || printf 'Try to switch the default shell for %s to zsh' "$TARGET_USER" )
-  7. $( [[ "$UPDATE_ONLY" -eq 1 ]] && printf 'Finish without touching system packages or chsh' || printf 'Preload zsh plugins for the target user' )
+  6. $( [[ "$UPDATE_ONLY" -eq 1 ]] && printf 'Skip default-shell changes for %s' "$TARGET_USER" || printf 'Try to switch the default shell for %s to zsh' "$TARGET_USER" )
+  7. Preload zsh plugins for the target user
 
 Run with --apply to execute.
 EOF
@@ -317,11 +370,9 @@ detect_shell_pkg_manager
 
 TMP_DIR="$(mktemp -d)"
 chmod 755 "$TMP_DIR"
-if [[ "$UPDATE_ONLY" -ne 1 ]]; then
-  [[ -n "$PKG_MANAGER" ]] || die "No supported package manager detected. Supported: apt, dnf, zypper, pacman."
-  ensure_sudo_session
-  install_shell_packages
-fi
+[[ -n "$PKG_MANAGER" ]] || die "No supported package manager detected. Supported: apt, dnf, zypper, pacman."
+ensure_sudo_session
+install_shell_packages
 
 clean_shell_env_user_state "$TARGET_USER" "$TARGET_HOME"
 install_starship "$TARGET_USER" "$TARGET_HOME"

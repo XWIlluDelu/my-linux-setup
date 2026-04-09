@@ -149,9 +149,15 @@ alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 
-alias grep='rg --color=auto'
-alias fgrep='rg -F --color=auto'
-alias egrep='rg -e --color=auto'
+if command -v rg >/dev/null 2>&1; then
+  alias grep='rg --color=auto'
+  alias fgrep='rg -F --color=auto'
+  alias egrep='rg -e --color=auto'
+else
+  alias grep='grep --color=auto'
+  alias fgrep='fgrep --color=auto'
+  alias egrep='egrep --color=auto'
+fi
 
 if command -v batcat >/dev/null 2>&1; then
   alias cat='batcat --paging=never -p'
@@ -165,10 +171,12 @@ elif command -v fd >/dev/null 2>&1; then
   alias find='fd'
 fi
 
-alias rm='trash-put'
-alias tl='trash-list'
-alias trestore='trash-restore'
-alias tempty='trash-empty'
+if command -v trash-put >/dev/null 2>&1; then
+  alias rm='trash-put'
+  command -v trash-list >/dev/null 2>&1 && alias tl='trash-list'
+  command -v trash-restore >/dev/null 2>&1 && alias trestore='trash-restore'
+  command -v trash-empty >/dev/null 2>&1 && alias tempty='trash-empty'
+fi
 
 alias df='df -h'
 alias du='du -h'
