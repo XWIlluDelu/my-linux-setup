@@ -16,9 +16,18 @@
 
 ### Ghostty 默认终端
 
-把 Ghostty 设为 GNOME 下的默认终端，按 `extras/ghostty-default-terminal/README.md` 中记录的最小步骤手动执行即可。
+把 Ghostty 设为常见 Linux 桌面栈下的默认终端：
 
-如果还想让 Nautilus 的 `Open in Terminal` 也打开 `ghostty`，以及给右键菜单增加 `Copy Path`，请看 `extras/nautilus-enhancements/README.md`。
+```bash
+bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --check
+bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply
+```
+
+如果还想顺手设置 Debian/Ubuntu 的 `x-terminal-emulator`：
+
+```bash
+bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply --set-alternatives
+```
 
 ### 装机流程
 
@@ -42,19 +51,19 @@ bash ~/my-linux-setup/manage.sh setup stage2 --apply --profile server
 
 ### 更新与维护
 
-只重写托管 shell 配置文件：
+只重写托管 shell 配置文件（`.profile`、`.bashrc`、`.zshrc`、`.tmux.conf`、`~/.config/starship.toml`），不会安装额外 shell 工具包：
 
 ```bash
 bash ~/my-linux-setup/manage.sh shell sync --apply --profile desktop
 ```
 
-完整例行更新。这里会依次处理系统包更新、已受管应用与 shell 组件刷新，以及最后的 cleanup：
+完整例行更新。这里会依次处理系统包更新、已受管应用与 shell 组件刷新（包含托管 shell 环境用到的现代 CLI 工具）、以及最后的 cleanup：
 
 ```bash
 bash ~/my-linux-setup/manage.sh update --apply
 ```
 
-只刷新已受管应用与 shell 组件。这里包含仓库路径下的 Edge、VSCode，也包含官方安装路径下的 WeChat、Ghostty、Miniforge 等：
+只刷新已受管应用与 shell 组件。这里包含仓库路径下的 Edge、VSCode，也包含官方安装路径下的 WeChat、Ghostty、Miniforge 等；同时会补齐托管 shell 环境依赖的现代 CLI 工具（按发行版可用性探测）：
 
 ```bash
 bash ~/my-linux-setup/manage.sh update apps --apply
