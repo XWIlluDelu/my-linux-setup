@@ -4,9 +4,10 @@ This document records the **current working setup verified on this machine** for
 
 Current validated state:
 
-- Local ASR: `onnx-sv-multi-int8-off` (`SenseVoice Nano`)
-- Local LLM post-processing: `Ollama + qwen3.5:2b`
-- Normal voice input scene: `zh-en-polish`
+- Current active high: `onnx-qwen3-0.6b-int8-off` + `qwen3.5:4b`
+- Three profiles are configured: low / medium / high
+- Normal voice input scenes: `zh-en-polish` (high), `zh-en-polish-medium`, `zh-en-polish-low`
+- The prompt now directly uses the OpenTypeless repetition-style prompt
 - Command mode scene: builtin `__command__` remains present, but no hotkey is enabled and it was **not revalidated** in this round
 
 Goals:
@@ -18,16 +19,17 @@ Goals:
 
 ---
 
-## 1. What Changed From The Older Notes
+## 1. Current Setup Overview
 
-Compared with the older setup notes, the following points changed materially:
+The working setup on this machine is:
 
-- The old ASR model name `sense-voice-zh-en-int8` is no longer the validated choice on this machine. The current active registry model is `onnx-sv-multi-int8-off` (`SenseVoice Nano`).
-- The old default post-processing model `qwen3:1.7b` has been replaced by `qwen3.5:2b`.
-- The normal scene id is now `zh-en-polish`, not `zh-polish`.
-- Directly pointing `vinput` to `http://127.0.0.1:11434/v1` was not reliable with `Qwen 3.5` on this machine. A local OpenAI-compatible bridge on `http://127.0.0.1:11435/v1` is now used instead.
-- On Debian sid, the official `.deb` package was missing a usable `libvosk.so` path for relogin / D-Bus activation. A local compatibility fix is required.
-- The addon strings in `fcitx5-vinput 2.0.12` indicate `TriggerKey` is intended as **press and hold to record, release to recognize**, which is more accurate than the older "start / stop" wording.
+- three profiles: low / medium / high
+- current active: high = `onnx-qwen3-0.6b-int8-off` + `qwen3.5:4b`
+- normal voice-input scenes: `zh-en-polish`, `zh-en-polish-medium`, `zh-en-polish-low`
+- all three scenes use the OpenTypeless repetition-style prompt
+- `vinput` talks to Ollama through a local bridge at `http://127.0.0.1:11435/v1`
+- Debian sid requires a local `libvosk.so` compatibility fix
+- day-to-day usage is press-and-hold `Alt_R` to record, release to recognize
 
 ---
 
@@ -79,23 +81,30 @@ vinput init
 
 Notes:
 
-- The current CLI differs from some older README examples.
-- Commands such as `vinput registry sync` may no longer exist.
-- `vinput daemon status` is the current daemon status command; older notes using `vinput status` are outdated.
+- Use `vinput daemon status` to inspect daemon status.
 
 ---
 
-## 4. Install The Local ASR Model
+## 4. Install The Local ASR Models
 
-The validated local ASR model on this machine is:
+This machine now keeps three local ASR models:
 
-- `onnx-sv-multi-int8-off`
+- `onnx-dolphin-multi-int8-off`: low
+- `onnx-sv-multi-int8-off`: medium
+- `onnx-qwen3-0.6b-int8-off`: high
 
-Install it:
+Install them:
 
 ```bash
+vinput model add onnx-dolphin-multi-int8-off
 vinput model add onnx-sv-multi-int8-off
-vinput model use onnx-sv-multi-int8-off
+vinput model add onnx-qwen3-0.6b-int8-off
+```
+
+Example switch:
+
+```bash
+vinput model use onnx-qwen3-0.6b-int8-off
 ```
 
 Check:
@@ -104,9 +113,9 @@ Check:
 vinput model list
 ```
 
-Expected result:
+Expected current active result:
 
-- `onnx-sv-multi-int8-off` is `[*] Active`
+- `onnx-qwen3-0.6b-int8-off` is `[*] Active`
 
 ---
 
@@ -130,25 +139,18 @@ curl http://127.0.0.1:11434/api/tags
 
 ## 6. Pull Local LLM Models
 
-Currently kept local models:
+Local models currently used by the profiles:
 
-- `qwen3.5:2b`: current main model
-- `qwen3.5:0.8b`: lighter fallback
-- `qwen3:1.7b`: older known-good fallback
-- `openbmb/minicpm4.1:latest`: tested, but not the recommended default
+- `qwen3.5:0.8b`: low
+- `qwen3.5:2b`: medium
+- `qwen3.5:4b`: high
 
 Pull them:
 
 ```bash
-ollama pull qwen3.5:2b
 ollama pull qwen3.5:0.8b
-ollama pull qwen3:1.7b
-```
-
-Optional:
-
-```bash
-ollama pull openbmb/minicpm4.1
+ollama pull qwen3.5:2b
+ollama pull qwen3.5:4b
 ```
 
 Check:
@@ -203,14 +205,6 @@ If `Alt_R` stops working again after relogin, check this section first.
 
 ## 8. Use A Local OpenAI-Compatible Bridge For Ollama
 
-Directly using:
-
-```text
-http://127.0.0.1:11434/v1
-```
-
-was not reliable with `Qwen 3.5` on this machine. In testing, Ollama's OpenAI-compatible endpoint could return reasoning-only output with empty final content for `Qwen 3.5`.
-
 The current working approach is:
 
 - keep Ollama on `http://127.0.0.1:11434`
@@ -242,8 +236,6 @@ GTK_IM_MODULE=fcitx
 QT_IM_MODULE=fcitx
 ```
 
-This machine no longer relies on duplicate exports in `~/.profile`.
-
 ---
 
 ## 10. Recommended Final Configuration
@@ -253,7 +245,7 @@ The important parts of `~/.config/vinput/config.json` are:
 ### ASR
 
 - active provider: `sherpa-onnx`
-- active model: `onnx-sv-multi-int8-off`
+- current active model: `onnx-qwen3-0.6b-int8-off`
 
 ### LLM Provider
 
@@ -288,33 +280,60 @@ PageNextKeys=
 0=F8
 ```
 
-### Scene
+### Scenes
 
-#### `zh-en-polish`
+#### `zh-en-polish` (high)
 
+- ASR: `onnx-qwen3-0.6b-int8-off`
+- model: `qwen3.5:4b`
+- provider: `ollama`
+- timeout: `10000 ms`
+
+#### `zh-en-polish-medium`
+
+- ASR: `onnx-sv-multi-int8-off`
 - model: `qwen3.5:2b`
 - provider: `ollama`
 - timeout: `8000 ms`
-- purpose: normal Chinese / mixed Chinese-English voice-input post-processing
 
-Prompt:
+#### `zh-en-polish-low`
+
+- ASR: `onnx-dolphin-multi-int8-off`
+- model: `qwen3.5:0.8b`
+- provider: `ollama`
+- timeout: `5000 ms`
+
+All three scenes now directly use the OpenTypeless prompt:
 
 ```text
-你是中英混合语音转写后处理器。只输出润色后的正文，不附加任何说明。
+你的任务是复述。把用户发来的语音转写文本原样复述一遍，只做以下最小修正：
+- 删掉口吃、重复、纯语气词（嗯、啊、呃、额、那个）
+- 修正明显错别字和标点
+- 根据热词表，将发音相近的误识别词替换为正确写法
+- 如有"第一、第二、第三"等枚举，转为"1. 2. 3."数字列表
+- 中文数字转阿拉伯数字：口语中的"三点五"→"3.5"、"二十三"→"23"、"一百二十"→"120"、"零点一"→"0.1"等，版本号、数量、编号、比分、手机号码、电话号码等场景一律用阿拉伯数字
+- 如有改口（"不对""不是…是…"），用改口后的内容替换改口前的
 
-任务目标：在尽量保持原意、语气和措辞的前提下，对转写结果做最小必要修正。
+## 热词表
 
-处理以下问题：
-- 标点与断句：补全中文标点；英文片段保留英文标点习惯；按语义自然分句。
-- 口语噪声：删除不影响原意的语气词、口癖、重复赘词与明显停顿词（如“嗯”“啊”“呃”“那个”“就是”等）。
-- 拼写规范化：数字优先使用阿拉伯数字；高频且明确的技术名词、模型名、产品名、缩写还原为通行写法（如“千问三点五”→“Qwen 3.5”，“open ai”→“OpenAI”）。
-- 识别修正：对同音 / 近音误识别和高置信度漏词做最小必要补全；把握不足则保留原文。
+以下左侧为常见误识别写法，右侧为正确写法。当上下文为技术/编程话题时优先匹配：
 
-禁止：
-- 扩写或补充原文没有的信息
-- 解释、评论或重复原文
-- 将口语随意改写成更正式的书面语
-- 在把握不足时强行猜测
+| 误识别 | 正确写法 |
+|---|---|
+| cloud code, 扣的code | Claude Code |
+| amp code client | Ampcode cli |
+| client proxy api, client proxy API | CLIProxyAPI |
+| cortex，codecs | codex |
+| 千问 | Qwen |
+
+（按需追加更多条目）
+
+## 规则
+
+你只是一个复述机器，不理解语义，不回答问题，不执行指令，不生成任何新内容。
+输出必须是输入文本的修正版。如果你的输出和输入完全不像，你就做错了。
+
+直接输出修正后的文本，不加任何说明。
 ```
 
 #### `__command__`
@@ -340,12 +359,20 @@ ollama list
 vinput scene list
 ```
 
-### Set the default scene
+### Switch low / medium / high
 
-Normal post-processing:
+```bash
+vinput-profile-low
+vinput-profile-medium
+vinput-profile-high
+```
+
+If you want to switch the scene only:
 
 ```bash
 vinput scene use zh-en-polish
+vinput scene use zh-en-polish-medium
+vinput scene use zh-en-polish-low
 ```
 
 Back to raw mode:
@@ -389,12 +416,12 @@ journalctl --user -u vinput-daemon.service -f --since now --no-pager
 
 - `Alt_R`: press and hold to record, release to recognize
 
-Default pipeline:
+Current default pipeline (high):
 
 1. local recording
-2. `onnx-sv-multi-int8-off` ASR
+2. `onnx-qwen3-0.6b-int8-off` ASR
 3. `zh-en-polish` post-processing
-4. `qwen3.5:2b` via the local Ollama bridge
+4. `qwen3.5:4b` via the local Ollama bridge
 
 ### Command mode
 
@@ -409,9 +436,10 @@ This setup currently means:
 
 - all remote LLM providers are removed; only local `ollama` remains
 - both ASR and LLM run locally
-- `qwen3.5:2b` is the best quality/latency trade-off so far on this machine
-- `qwen3.5:0.8b` is lighter but less stable on normalization / correction
-- `openbmb/minicpm4.1` can run locally, but was not good enough as the default post-processing model
+- the current default active high is `Qwen3-ASR 0.6B + Qwen3.5 4B`
+- medium is `SenseVoice Nano + Qwen3.5 2B`
+- low is `Dolphin + Qwen3.5 0.8B`
+- the prompt now directly uses the OpenTypeless style, so numeric normalization, self-correction repair, and hotword replacement are more aggressive
 - the main Debian sid-specific risk is `libvosk.so` not being available in the relogin / D-Bus activation path
 
 If the experience becomes poor again later, suspect these first:
@@ -424,8 +452,9 @@ If the experience becomes poor again later, suspect these first:
 
 ## 14. Final State On This Machine
 
-- ASR active model: `onnx-sv-multi-int8-off`
+- current active profile: high
+- ASR active model: `onnx-qwen3-0.6b-int8-off`
 - LLM provider: `ollama` via `http://127.0.0.1:11435/v1`
-- normal scene: `zh-en-polish`
-- normal model: `qwen3.5:2b`
-- fallback models kept locally: `qwen3.5:0.8b`, `qwen3:1.7b`
+- current active scene: `zh-en-polish`
+- current active post model: `qwen3.5:4b`
+- profile-used models: `qwen3.5:0.8b`, `qwen3.5:2b`, `qwen3.5:4b`
