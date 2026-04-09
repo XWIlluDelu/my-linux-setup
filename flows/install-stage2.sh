@@ -695,7 +695,7 @@ if [[ "$INSTALL_SHELL_ENV" -eq 1 ]]; then
   run_continue_step \
     shell_env \
     installed \
-    "[5/10] Install the shared shell environment" \
+    "[5/10] Install the shared shell environment and modern CLI tool bundle" \
     bash "$ROOT_DIR/tasks/shell/install-shell-environment.sh" --apply --profile "$INSTALL_PROFILE"
 else
   record_stage2_result shell_env skipped_not_selected "Skipped by stage2 selection."
