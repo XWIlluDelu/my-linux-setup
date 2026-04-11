@@ -80,6 +80,12 @@ shell_package_candidates() {
     fzf:apt-get|fzf:dnf|fzf:zypper|fzf:pacman)
       printf '%s\n' fzf
       ;;
+    direnv:apt-get|direnv:dnf|direnv:zypper|direnv:pacman)
+      printf '%s\n' direnv
+      ;;
+    uv:apt-get|uv:dnf|uv:zypper|uv:pacman)
+      printf '%s\n' uv
+      ;;
     trash-cli:apt-get|trash-cli:dnf|trash-cli:zypper|trash-cli:pacman)
       printf '%s\n' trash-cli
       ;;
@@ -112,7 +118,7 @@ install_shell_packages() {
   [[ -n "$PKG_MANAGER" ]] || die "No supported package manager detected. Supported: apt, dnf, zypper, pacman."
 
   packages=(zsh tmux)
-  modern_tool_keys=(eza ripgrep bat fd fzf trash-cli)
+  modern_tool_keys=(eza ripgrep bat fd fzf direnv uv trash-cli)
 
   for tool_key in "${modern_tool_keys[@]}"; do
     if resolved_package="$(resolve_shell_package "$tool_key")"; then

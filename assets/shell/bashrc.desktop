@@ -94,12 +94,9 @@ alias gp='git push'
 alias gl='git log --oneline --graph --decorate -20'
 alias gd='git diff'
 
-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-if [ -s "$NVM_DIR/nvm.sh" ]; then
-  . "$NVM_DIR/nvm.sh"
-  [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
-fi
-
 if [ -f /usr/share/bash-completion/bash_completion ]; then
   . /usr/share/bash-completion/bash_completion
+fi
+if command -v direnv >/dev/null 2>&1; then
+  eval "$(direnv hook bash)"
 fi

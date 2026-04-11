@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -22,11 +23,14 @@ CLAUDE_DIR = Path.home() / ".claude"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
 HISTORY_PATH = CLAUDE_DIR / "history.jsonl"
 SESSIONS_DIR = CLAUDE_DIR / "sessions"
-TRANSCRIPTS_DIR = CLAUDE_DIR / "transcripts"
 
 COMMAND_TAG_RE = re.compile(r"<command-name>.*?</command-name>", re.DOTALL)
-COMMAND_STDOUT_RE = re.compile(r"<local-command-stdout>.*?</local-command-stdout>", re.DOTALL)
-COMMAND_CAVEAT_RE = re.compile(r"<local-command-caveat>.*?</local-command-caveat>", re.DOTALL)
+COMMAND_STDOUT_RE = re.compile(
+    r"<local-command-stdout>.*?</local-command-stdout>", re.DOTALL
+)
+COMMAND_CAVEAT_RE = re.compile(
+    r"<local-command-caveat>.*?</local-command-caveat>", re.DOTALL
+)
 COMMAND_MESSAGE_RE = re.compile(r"<command-message>.*?</command-message>", re.DOTALL)
 COMMAND_ARGS_RE = re.compile(r"<command-args>.*?</command-args>", re.DOTALL)
 GENERIC_TAG_RE = re.compile(r"<[^>]+>")
@@ -47,7 +51,9 @@ def iso_from_any_timestamp(value: Any) -> str | None:
         return None
     if isinstance(value, (int, float)):
         try:
-            return datetime.fromtimestamp(float(value) / 1000.0, tz=timezone.utc).isoformat()
+            return datetime.fromtimestamp(
+                float(value) / 1000.0, tz=timezone.utc
+            ).isoformat()
         except (OSError, OverflowError, ValueError):
             return None
     if isinstance(value, str):
@@ -119,7 +125,9 @@ def read_runtime_index() -> dict[str, RuntimeSessionInfo]:
         grouped[session_id] = RuntimeSessionInfo(
             started_at=iso_from_any_timestamp(payload.get("startedAt")),
             cwd=payload.get("cwd") if isinstance(payload.get("cwd"), str) else None,
-            entrypoint=payload.get("entrypoint") if isinstance(payload.get("entrypoint"), str) else None,
+            entrypoint=payload.get("entrypoint")
+            if isinstance(payload.get("entrypoint"), str)
+            else None,
             kind=payload.get("kind") if isinstance(payload.get("kind"), str) else None,
             pid=payload.get("pid") if isinstance(payload.get("pid"), int) else None,
         )
@@ -164,9 +172,23 @@ def looks_like_prompt(text: str) -> bool:
     if lowered.startswith("/"):
         return False
     # Bare command keywords
-    if lowered in {"see ya!", "model", "effort", "exit", "resume", "login", "logout", "init", "review"}:
+    if lowered in {
+        "see ya!",
+        "model",
+        "effort",
+        "exit",
+        "resume",
+        "login",
+        "logout",
+        "init",
+        "review",
+    }:
         return False
-    if lowered.startswith("set model to") or lowered.startswith("set effort level") or lowered.startswith("current effort level"):
+    if (
+        lowered.startswith("set model to")
+        or lowered.startswith("set effort level")
+        or lowered.startswith("current effort level")
+    ):
         return False
     if lowered.startswith("caveat:"):
         return False
@@ -193,38 +215,6 @@ def history_prompt_candidates(entries: list[dict[str, Any]]) -> list[str]:
     return prompts
 
 
-def summarize_transcript_flat_file(path: Path) -> dict[str, Any] | None:
-    """Summarise a ~/.claude/transcripts/*.jsonl file (flat schema, no message wrapper)."""
-    records = parse_jsonl(path)
-    if not records:
-        return None
-
-    started_at: str | None = None
-    updated_at: str | None = None
-    user_message_count = 0
-
-    for record in records:
-        timestamp = iso_from_any_timestamp(record.get("timestamp"))
-        if timestamp:
-            if started_at is None or timestamp < started_at:
-                started_at = timestamp
-            if updated_at is None or timestamp > updated_at:
-                updated_at = timestamp
-        if record.get("type") == "user" and record.get("message") is None:
-            raw_text = flatten_message_content(record.get("content"))
-            if looks_like_prompt(clean_message_text(raw_text)):
-                user_message_count += 1
-
-    return {
-        "entryCount": user_message_count,
-        "userMessageCount": user_message_count,
-        "assistantMessageCount": 0,
-        "startedAt": started_at,
-        "updatedAt": updated_at,
-        "storageBytes": jsonl_size_bytes(path) or 0,
-    }
-
-
 def summarize_subagent_file(path: Path) -> dict[str, Any] | None:
     records = parse_jsonl(path)
     if not records:
@@ -249,7 +239,9 @@ def summarize_subagent_file(path: Path) -> dict[str, Any] | None:
         if record.get("type") != "user" or role != "user":
             continue
 
-        raw_text = flatten_message_content(message.get("content") if isinstance(message, dict) else None)
+        raw_text = flatten_message_content(
+            message.get("content") if isinstance(message, dict) else None
+        )
         cleaned_text = clean_message_text(raw_text)
         if looks_like_prompt(cleaned_text):
             user_message_count += 1
@@ -276,7 +268,9 @@ def candidate_subagent_dirs(session_path: Path, session_id: str) -> list[Path]:
     return candidates
 
 
-def collect_subagent_aggregate(session_path: Path, session_id: str) -> dict[str, Any] | None:
+def collect_subagent_aggregate(
+    session_path: Path, session_id: str
+) -> dict[str, Any] | None:
     aggregate = {
         "subagentCount": 0,
         "subagentEntryCount": 0,
@@ -296,11 +290,14 @@ def collect_subagent_aggregate(session_path: Path, session_id: str) -> dict[str,
             aggregate["subagentCount"] += 1
             aggregate["subagentEntryCount"] += summary["entryCount"]
             aggregate["subagentUserMessageCount"] += summary["userMessageCount"]
-            aggregate["subagentAssistantMessageCount"] += summary["assistantMessageCount"]
+            aggregate["subagentAssistantMessageCount"] += summary[
+                "assistantMessageCount"
+            ]
             aggregate["subagentStorageBytes"] += summary["storageBytes"]
             updated_at = summary["updatedAt"]
             if updated_at and (
-                aggregate["subagentUpdatedAt"] is None or updated_at > aggregate["subagentUpdatedAt"]
+                aggregate["subagentUpdatedAt"] is None
+                or updated_at > aggregate["subagentUpdatedAt"]
             ):
                 aggregate["subagentUpdatedAt"] = updated_at
 
@@ -313,6 +310,7 @@ def normalize_session_records(
     records: list[dict[str, Any]],
     history_index: dict[str, list[dict[str, Any]]],
     runtime_index: dict[str, RuntimeSessionInfo],
+    source_category: str,
 ) -> dict[str, Any] | None:
     if not records or not session_id:
         return None
@@ -328,7 +326,9 @@ def normalize_session_records(
     user_message_count = 0
 
     for record in records:
-        project_path = project_path or (record.get("cwd") if isinstance(record.get("cwd"), str) else None)
+        project_path = project_path or (
+            record.get("cwd") if isinstance(record.get("cwd"), str) else None
+        )
 
         timestamp = iso_from_any_timestamp(record.get("timestamp"))
         if timestamp:
@@ -351,11 +351,8 @@ def normalize_session_records(
             if isinstance(prompt_candidate, str) and prompt_candidate.strip():
                 last_prompt_marker = clean_message_text(prompt_candidate)
 
-        # Transcript-schema records (from ~/.claude/transcripts/*.jsonl) have no "message"
-        # wrapper: content is directly on the record and there is no "cwd" field.
         message = record.get("message")
         if record_type == "user" and message is None:
-            # Flat transcript record — extract prompt directly.
             raw_text = flatten_message_content(record.get("content"))
             cleaned_text = clean_message_text(raw_text)
             if looks_like_prompt(cleaned_text):
@@ -363,7 +360,6 @@ def normalize_session_records(
                 user_prompts.append(cleaned_text)
             continue
 
-        # Infer project path from tool_use paths when cwd is absent (transcript sessions).
         if not project_path and record_type == "tool_use":
             tool_input = record.get("tool_input")
             if isinstance(tool_input, dict):
@@ -381,7 +377,9 @@ def normalize_session_records(
         if record_type != "user" or role != "user":
             continue
 
-        raw_text = flatten_message_content(message.get("content") if isinstance(message, dict) else None)
+        raw_text = flatten_message_content(
+            message.get("content") if isinstance(message, dict) else None
+        )
         cleaned_text = clean_message_text(raw_text)
         if not looks_like_prompt(cleaned_text):
             continue
@@ -391,7 +389,11 @@ def normalize_session_records(
     history_entries = history_index.get(session_id, [])
     history_prompts = history_prompt_candidates(history_entries)
 
-    first_prompt = user_prompts[0] if user_prompts else (history_prompts[0] if history_prompts else "")
+    first_prompt = (
+        user_prompts[0]
+        if user_prompts
+        else (history_prompts[0] if history_prompts else "")
+    )
     last_prompt = (
         last_prompt_marker
         or (user_prompts[-1] if user_prompts else "")
@@ -422,7 +424,9 @@ def normalize_session_records(
     storage_bytes = jsonl_size_bytes(path)
 
     return {
+        "recordId": f"{source_category}:{session_id}",
         "sessionId": session_id,
+        "sourceCategory": source_category,
         "title": title,
         "titleSource": title_source,
         "projectPath": project_path or "",
@@ -454,38 +458,32 @@ def normalize_session_file(
     path: Path,
     history_index: dict[str, list[dict[str, Any]]],
     runtime_index: dict[str, RuntimeSessionInfo],
+    source_category: str,
 ) -> dict[str, Any] | None:
     records = parse_jsonl(path)
     if not records:
         return None
     session_id = derive_session_id(path, records)
-    return normalize_session_records(path, session_id, records, history_index, runtime_index)
+    return normalize_session_records(
+        path, session_id, records, history_index, runtime_index, source_category
+    )
 
 
 def find_session_transcript_path(session_id: str) -> Path | None:
-    if PROJECTS_DIR.exists():
-        for project_dir in PROJECTS_DIR.iterdir():
-            if not project_dir.is_dir():
-                continue
-            candidate = project_dir / f"{session_id}.jsonl"
-            if candidate.exists():
-                return candidate
+    if not PROJECTS_DIR.exists():
+        return None
 
-    direct_transcript = TRANSCRIPTS_DIR / f"{session_id}.jsonl"
-    if direct_transcript.exists():
-        return direct_transcript
+    for project_dir in PROJECTS_DIR.iterdir():
+        if not project_dir.is_dir():
+            continue
+        candidate = project_dir / f"{session_id}.jsonl"
+        if candidate.exists():
+            return candidate
 
-    if PROJECTS_DIR.exists():
-        for project_dir in PROJECTS_DIR.iterdir():
-            if not project_dir.is_dir():
-                continue
-            for candidate in project_dir.glob("*.jsonl"):
-                records = parse_jsonl(candidate)
-                if records and derive_session_id(candidate, records) == session_id:
-                    return candidate
-
-    if TRANSCRIPTS_DIR.exists():
-        for candidate in TRANSCRIPTS_DIR.glob("*.jsonl"):
+    for project_dir in PROJECTS_DIR.iterdir():
+        if not project_dir.is_dir():
+            continue
+        for candidate in project_dir.glob("*.jsonl"):
             records = parse_jsonl(candidate)
             if records and derive_session_id(candidate, records) == session_id:
                 return candidate
@@ -493,31 +491,15 @@ def find_session_transcript_path(session_id: str) -> Path | None:
     return None
 
 
-def delete_subagent_dirs(session_path: Path, session_id: str) -> list[str]:
-    removed_dirs: list[str] = []
-    if PROJECTS_DIR not in session_path.parents:
-        return removed_dirs
-
-    seen_session_dirs: set[Path] = set()
-    for subagents_dir in candidate_subagent_dirs(session_path, session_id):
-        session_dir = subagents_dir.parent
-        if session_dir in seen_session_dirs or not session_dir.exists() or not session_dir.is_dir():
-            continue
-        seen_session_dirs.add(session_dir)
-        try:
-            shutil.rmtree(session_dir)
-            removed_dirs.append(str(session_dir))
-        except OSError:
-            continue
-    return removed_dirs
-
-
 def compact_history_file(session_id: str) -> int:
     if not HISTORY_PATH.exists():
         return 0
     removed = 0
     temp_path = HISTORY_PATH.with_suffix(".jsonl.tmp")
-    with HISTORY_PATH.open("r", encoding="utf-8") as src, temp_path.open("w", encoding="utf-8") as dst:
+    with (
+        HISTORY_PATH.open("r", encoding="utf-8") as src,
+        temp_path.open("w", encoding="utf-8") as dst,
+    ):
         for line in src:
             stripped = line.strip()
             if not stripped:
@@ -535,22 +517,59 @@ def compact_history_file(session_id: str) -> int:
     return removed
 
 
-def delete_runtime_sidecars(session_id: str) -> list[str]:
-    removed_paths: list[str] = []
+@dataclass
+class StagedPathMove:
+    original_path: Path
+    staged_path: Path
+
+
+def stage_path_for_deletion(
+    path: Path, staging_root: Path, prefix: str, index: int
+) -> StagedPathMove:
+    staged_path = staging_root / f"{index:04d}-{prefix}-{path.name}"
+    path.replace(staged_path)
+    return StagedPathMove(original_path=path, staged_path=staged_path)
+
+
+def restore_staged_moves(staged_moves: list[StagedPathMove]) -> None:
+    for move in reversed(staged_moves):
+        if not move.staged_path.exists():
+            continue
+        move.original_path.parent.mkdir(parents=True, exist_ok=True)
+        move.staged_path.replace(move.original_path)
+
+
+def collect_session_dirs_to_delete(session_path: Path, session_id: str) -> list[Path]:
+    session_dirs: list[Path] = []
+    if PROJECTS_DIR not in session_path.parents:
+        return session_dirs
+
+    seen_session_dirs: set[Path] = set()
+    for subagents_dir in candidate_subagent_dirs(session_path, session_id):
+        session_dir = subagents_dir.parent
+        if (
+            session_dir in seen_session_dirs
+            or not session_dir.exists()
+            or not session_dir.is_dir()
+        ):
+            continue
+        seen_session_dirs.add(session_dir)
+        session_dirs.append(session_dir)
+    return session_dirs
+
+
+def collect_runtime_sidecars(session_id: str) -> list[Path]:
+    matches: list[Path] = []
     if not SESSIONS_DIR.exists():
-        return removed_paths
+        return matches
     for path in SESSIONS_DIR.glob("*.json"):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
         if isinstance(payload, dict) and payload.get("sessionId") == session_id:
-            try:
-                path.unlink()
-                removed_paths.append(str(path))
-            except OSError:
-                continue
-    return removed_paths
+            matches.append(path)
+    return matches
 
 
 def delete_session_record(session_id: str) -> dict[str, Any]:
@@ -563,17 +582,47 @@ def delete_session_record(session_id: str) -> dict[str, Any]:
     except OSError:
         transcript_size = None
 
-    transcript_path.unlink()
-    deleted_subagent_dirs = delete_subagent_dirs(transcript_path, session_id)
-    runtime_removed = delete_runtime_sidecars(session_id)
-    history_removed = compact_history_file(session_id)
+    session_dirs = collect_session_dirs_to_delete(transcript_path, session_id)
+    runtime_files = collect_runtime_sidecars(session_id)
+    staged_moves: list[StagedPathMove] = []
+
+    with tempfile.TemporaryDirectory(
+        prefix="claude-session-delete-", dir=str(CLAUDE_DIR)
+    ) as staging_dir:
+        staging_root = Path(staging_dir)
+        try:
+            staged_moves.append(
+                stage_path_for_deletion(transcript_path, staging_root, "transcript", 0)
+            )
+            next_index = 1
+            for session_dir in session_dirs:
+                staged_moves.append(
+                    stage_path_for_deletion(
+                        session_dir, staging_root, "session-dir", next_index
+                    )
+                )
+                next_index += 1
+            for runtime_file in runtime_files:
+                staged_moves.append(
+                    stage_path_for_deletion(
+                        runtime_file, staging_root, "runtime", next_index
+                    )
+                )
+                next_index += 1
+
+            history_removed = compact_history_file(session_id)
+        except Exception:
+            restore_staged_moves(staged_moves)
+            raise
 
     return {
+        "recordId": f"claude:{session_id}",
         "sessionId": session_id,
+        "sourceCategory": "claude",
         "deletedTranscript": str(transcript_path),
         "deletedTranscriptBytes": transcript_size,
-        "deletedSubagentDirs": deleted_subagent_dirs,
-        "deletedRuntimeFiles": runtime_removed,
+        "deletedSubagentDirs": [str(path) for path in session_dirs],
+        "deletedRuntimeFiles": [str(path) for path in runtime_files],
         "deletedHistoryEntries": history_removed,
     }
 
@@ -588,62 +637,17 @@ def load_sessions() -> list[dict[str, Any]]:
             if not project_dir.is_dir():
                 continue
             for session_path in sorted(project_dir.glob("*.jsonl")):
-                normalized = normalize_session_file(session_path, history_index, runtime_index)
+                normalized = normalize_session_file(
+                    session_path, history_index, runtime_index, "claude"
+                )
                 if not normalized:
                     continue
-                subagent_aggregate = collect_subagent_aggregate(session_path, normalized["sessionId"])
+                subagent_aggregate = collect_subagent_aggregate(
+                    session_path, normalized["sessionId"]
+                )
                 if subagent_aggregate:
                     normalized.update(subagent_aggregate)
-                sessions_by_id.setdefault(normalized["sessionId"], normalized)
-
-    # Build a time-range index over confirmed parent sessions so we can do
-    # containment matching for transcript files.
-    # A transcript whose [min_ts, max_ts] is fully contained within a parent
-    # session's [startedAt, updatedAt] is treated as a subagent of that session
-    # and is merged into its aggregate rather than shown as a standalone row.
-    parent_ranges: list[tuple[str, str, str]] = []  # (session_id, start, end)
-    for _sid, _sess in sessions_by_id.items():
-        _start = _sess.get("startedAt") or ""
-        _end = _sess.get("updatedAt") or _start
-        if _start and _end:
-            parent_ranges.append((_sid, _start, _end))
-
-    def _find_parent_session(t_min: str, t_max: str) -> str | None:
-        for p_sid, p_start, p_end in parent_ranges:
-            if p_start <= t_min and t_max <= p_end:
-                return p_sid
-        return None
-
-    if TRANSCRIPTS_DIR.exists():
-        for transcript_path in sorted(TRANSCRIPTS_DIR.glob("*.jsonl")):
-            summary = summarize_transcript_flat_file(transcript_path)
-            if not summary:
-                continue
-
-            t_start = summary["startedAt"]
-            t_end = summary["updatedAt"] or t_start
-
-            parent_id = _find_parent_session(t_start, t_end) if (t_start and t_end) else None
-
-            if parent_id and parent_id in sessions_by_id:
-                # Attach to the parent session as a subagent contribution.
-                parent = sessions_by_id[parent_id]
-                parent["subagentCount"] = parent.get("subagentCount", 0) + 1
-                parent["subagentEntryCount"] = parent.get("subagentEntryCount", 0) + summary["entryCount"]
-                parent["subagentUserMessageCount"] = parent.get("subagentUserMessageCount", 0) + summary["userMessageCount"]
-                parent["subagentStorageBytes"] = parent.get("subagentStorageBytes", 0) + summary["storageBytes"]
-                sub_updated = summary["updatedAt"]
-                if sub_updated and (
-                    parent.get("subagentUpdatedAt") is None
-                    or sub_updated > parent["subagentUpdatedAt"]
-                ):
-                    parent["subagentUpdatedAt"] = sub_updated
-            else:
-                # Truly unmatched transcript — keep as a standalone session.
-                normalized = normalize_session_file(transcript_path, history_index, runtime_index)
-                if not normalized:
-                    continue
-                sessions_by_id.setdefault(normalized["sessionId"], normalized)
+                sessions_by_id.setdefault(normalized["recordId"], normalized)
 
     sessions = list(sessions_by_id.values())
 
@@ -670,7 +674,12 @@ class SessionManagerHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _write_text(self, payload: str, status: HTTPStatus = HTTPStatus.OK, content_type: str = "text/plain; charset=utf-8") -> None:
+    def _write_text(
+        self,
+        payload: str,
+        status: HTTPStatus = HTTPStatus.OK,
+        content_type: str = "text/plain; charset=utf-8",
+    ) -> None:
         body = payload.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -684,16 +693,24 @@ class SessionManagerHandler(BaseHTTPRequestHandler):
             try:
                 sessions = load_sessions()
             except Exception as exc:  # noqa: BLE001
-                self._write_json({"error": f"Failed to load sessions: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._write_json(
+                    {"error": f"Failed to load sessions: {exc}"},
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
                 return
             self._write_json({"sessions": sessions, "count": len(sessions)})
             return
 
         if parsed.path in {"/", "/index.html"}:
             if not UI_PATH.exists():
-                self._write_text("session-manager.html not found", status=HTTPStatus.NOT_FOUND)
+                self._write_text(
+                    "session-manager.html not found", status=HTTPStatus.NOT_FOUND
+                )
                 return
-            self._write_text(UI_PATH.read_text(encoding="utf-8"), content_type="text/html; charset=utf-8")
+            self._write_text(
+                UI_PATH.read_text(encoding="utf-8"),
+                content_type="text/html; charset=utf-8",
+            )
             return
 
         self._write_text("Not Found", status=HTTPStatus.NOT_FOUND)
@@ -706,7 +723,9 @@ class SessionManagerHandler(BaseHTTPRequestHandler):
 
         session_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
         if not session_id:
-            self._write_json({"error": "Missing session id"}, status=HTTPStatus.BAD_REQUEST)
+            self._write_json(
+                {"error": "Missing session id"}, status=HTTPStatus.BAD_REQUEST
+            )
             return
 
         try:
@@ -715,7 +734,10 @@ class SessionManagerHandler(BaseHTTPRequestHandler):
             self._write_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
             return
         except Exception as exc:  # noqa: BLE001
-            self._write_json({"error": f"Failed to delete session: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            self._write_json(
+                {"error": f"Failed to delete session: {exc}"},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
             return
 
         self._write_json({"ok": True, "result": result}, status=HTTPStatus.OK)

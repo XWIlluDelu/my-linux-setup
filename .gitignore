@@ -1,2 +1,3 @@
 __pycache__/
 *.pyc
+extras/my-ai-tools/claude-session-manager/session-manager.pid

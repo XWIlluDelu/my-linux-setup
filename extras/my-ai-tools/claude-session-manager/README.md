@@ -27,10 +27,10 @@ open http://127.0.0.1:8765
 ./stop.sh
 ```
 
-The server runs on `127.0.0.1:8765` by default. Override with environment variables:
+The server runs on `127.0.0.1:8765` by default. You can override the port, and the host is intended to remain local-only:
 
 ```bash
-SESSION_MANAGER_HOST=0.0.0.0 SESSION_MANAGER_PORT=9000 ./run.sh
+SESSION_MANAGER_PORT=9000 ./run.sh
 ```
 
 Logs go to `/tmp/session-manager.log`.
@@ -64,7 +64,7 @@ The server reads three locations:
 
 | Path | Content |
 |------|---------|
-| `~/.claude/projects/**/*.jsonl` | Conversation transcripts (primary) |
+| `~/.claude/projects/**/*.jsonl` | Conversation transcripts |
 | `~/.claude/history.jsonl` | Structured session metadata index |
 | `~/.claude/sessions/*.json` | Runtime sidecar files (cwd, pid, entrypoint) |
 

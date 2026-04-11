@@ -221,13 +221,6 @@ setopt ALWAYS_TO_END
 # Load FZF Native Keybindings (if fzf installed)
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
-# Load nvm when present.
-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-if [[ -s "$NVM_DIR/nvm.sh" ]]; then
-  . "$NVM_DIR/nvm.sh"
-  [[ -s "$NVM_DIR/bash_completion" ]] && . "$NVM_DIR/bash_completion"
-fi
-
 # Prevent external environments (conda, venv) from modifying the prompt
 export CONDA_CHANGEPS1=false
 export VIRTUAL_ENV_DISABLE_PROMPT=1
@@ -240,3 +233,6 @@ if [[ "${DISABLE_BRACKETED_PASTE:-0}" != "1" ]]; then
 fi
 
 eval "$(starship init zsh)"
+if command -v direnv >/dev/null 2>&1; then
+  eval "$(direnv hook zsh)"
+fi

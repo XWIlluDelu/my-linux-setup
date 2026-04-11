@@ -57,6 +57,18 @@ bash ~/my-linux-setup/manage.sh setup stage2 --apply --profile server
 bash ~/my-linux-setup/manage.sh shell sync --apply --profile desktop
 ```
 
+托管 shell 配置的边界：
+
+- `assets/` 里只放 `my-linux-setup` 会安装和管理的工具对应配置
+- 本机特有路径或手动安装工具默认不写进 `assets/`
+- 例如手动安装的 latest `node`、机器特定 SDK 路径、临时代理路径，都应该视为本地配置
+
+如果你执行了 `shell sync`，受管文件会被覆盖；本机特有 shell 恢复策略见：
+
+```bash
+~/my-linux-setup/LOCAL_ENV_AGENT_NOTES.md
+```
+
 完整例行更新。这里会依次处理系统包更新、已受管应用与 shell 组件刷新（包含托管 shell 环境用到的现代 CLI 工具）、以及最后的 cleanup：
 
 ```bash

@@ -36,6 +36,8 @@ base_tool_packages() {
         jq \
         ripgrep \
         fd-find \
+        direnv \
+        uv \
         tree \
         unzip \
         zip \
@@ -57,6 +59,8 @@ base_tool_packages() {
         jq \
         ripgrep \
         fd-find \
+        direnv \
+        uv \
         tree \
         unzip \
         zip \
@@ -78,6 +82,8 @@ base_tool_packages() {
         jq \
         ripgrep \
         fd \
+        direnv \
+        uv \
         tree \
         unzip \
         zip \
@@ -98,6 +104,8 @@ base_tool_packages() {
         jq \
         ripgrep \
         fd \
+        direnv \
+        uv \
         tree \
         unzip \
         zip \
