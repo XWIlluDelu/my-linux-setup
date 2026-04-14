@@ -255,6 +255,35 @@ def summarize_subagent_file(path: Path) -> dict[str, Any] | None:
     }
 
 
+def dir_total_bytes(path: Path) -> int:
+    """Recursively sum the sizes of all files under *path*."""
+    total = 0
+    if not path.exists() or not path.is_dir():
+        return total
+    for entry in path.rglob("*"):
+        if entry.is_file():
+            try:
+                total += entry.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def compute_session_dir_bytes(session_path: Path, session_id: str) -> int:
+    """Return total bytes of all files inside the session-specific directory
+    (e.g. ``{project_dir}/{sessionId}/``), which may contain ``subagents/``,
+    ``tool-results/``, and any other session-scoped sub-directories."""
+    total = 0
+    seen: set[Path] = set()
+    for subagents_dir in candidate_subagent_dirs(session_path, session_id):
+        session_dir = subagents_dir.parent
+        if session_dir in seen:
+            continue
+        seen.add(session_dir)
+        total += dir_total_bytes(session_dir)
+    return total
+
+
 def candidate_subagent_dirs(session_path: Path, session_id: str) -> list[Path]:
     candidates: list[Path] = []
     seen: set[Path] = set()
@@ -451,6 +480,7 @@ def normalize_session_records(
         "subagentAssistantMessageCount": 0,
         "subagentUpdatedAt": None,
         "subagentStorageBytes": 0,
+        "sessionDirStorageBytes": 0,
     }
 
 
@@ -647,6 +677,10 @@ def load_sessions() -> list[dict[str, Any]]:
                 )
                 if subagent_aggregate:
                     normalized.update(subagent_aggregate)
+                session_dir_bytes = compute_session_dir_bytes(
+                    session_path, normalized["sessionId"]
+                )
+                normalized["sessionDirStorageBytes"] = session_dir_bytes
                 sessions_by_id.setdefault(normalized["recordId"], normalized)
 
     sessions = list(sessions_by_id.values())

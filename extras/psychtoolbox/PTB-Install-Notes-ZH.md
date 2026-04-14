@@ -1,189 +1,306 @@
 # Psychtoolbox 3 安装笔记
-## Ubuntu/Debian + MATLAB + Wayland + NVIDIA
+## Agent Reference
 
-**测试环境：** Ubuntu 25.10，Linux kernel 6.17，MATLAB R2026a，NVIDIA GeForce RTX 5080（驱动 570.211.01），GNOME on Wayland
+适用环境：
 
----
-
-## 问题总览
-
-| # | 问题 | 根本原因 | 解决方法 |
-|---|------|---------|---------|
-| 1 | `DownloadPsychtoolbox.m` 失败 | GitHub 于 2024 年 1 月关闭了 SVN 前端 | 下载 zip + `SetupPsychtoolbox` |
-| 2 | MEX 文件无法加载（`Invalid MEX-file`） | Kernel 6.x 阻止可执行栈（`GNU_STACK RWE`） | `patchelf --clear-execstack` |
-| 3 | `Screen()` 拒绝开窗 | PTB 检测到 XWayland 后硬性报错 | 取消 `WAYLAND_DISPLAY` + `ConserveVRAM` 标志 |
-| 4 | `OpenWindow` 导致 MATLAB 崩溃 | MATLAB 自带 Mesa 软件渲染 libGL 优先于系统 NVIDIA | `LD_PRELOAD` 注入系统 NVIDIA libGL |
-| 5 | `moglcore` 报错：找不到 `libglut.so.3` | Ubuntu 25.10 将包更名为 `libglut3.12` | 安装 + 修复软链接 |
+- Debian sid
+- MATLAB R2026a
+- Wayland 桌面会话
+- NVIDIA GPU
 
 ---
 
-## Step 1 — 安装系统依赖
+## 核心结论
 
-```bash
-sudo apt install -y patchelf libglut3.12
+- PTB 版本：`3.0.22.2`
+- 安装位置：`~/.matlab/toolbox/Psychtoolbox`
+- **纯 Wayland 不可用**：保留 `WAYLAND_DISPLAY` 时，`Screen('OpenWindow')` 会因 XWayland fake X-Server 检查而拒绝运行。
+- **开发机可用方案**：MATLAB 在 Wayland 桌面中启动，但 launcher 清空 `WAYLAND_DISPLAY`，并在 `startup.m` 中设置 `ConserveVRAM(2^19)`。
+- 该方案已验证：
+  - `AssertOpenGL` 正常
+  - `Screen('OpenWindow')` 可成功开窗
+  - MATLAB 不 crash
+- 该方案**不适合正式实验机**，因为 timing 仍不可靠。
+- 当前 PTB 预编译 MEX 需要 `PsychLicenseHandling('Setup')`，可先用 free trial。
 
-# Ubuntu 25.10 安装的是 libglut.so.3.12，但 PTB 期望 libglut.so.3 —— 手动创建软链接：
-sudo ln -sf /usr/lib/x86_64-linux-gnu/libglut.so.3.12 \
-            /usr/lib/x86_64-linux-gnu/libglut.so.3
+---
+
+## 关键文件
+
+### 1. MATLAB launcher
+
+路径：
+
+```text
+~/.local/bin/matlab
 ```
 
-> **注意：** Ubuntu ≤ 24.04 上使用 `sudo apt install freeglut3`，软链接会自动创建。
+当前有效内容：
+
+```bash
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+MATLAB_BIN="/usr/local/MATLAB/R2026a/bin/matlab"
+SYSTEM_LIBGL="/usr/lib/x86_64-linux-gnu/libGL.so.1"
+SYSTEM_LIBGLUT="/usr/lib/x86_64-linux-gnu/libglut.so.3"
+
+if [[ ! -x "$MATLAB_BIN" ]]; then
+  echo "MATLAB executable not found at $MATLAB_BIN" >&2
+  exit 1
+fi
+
+if [[ -r "$SYSTEM_LIBGL" && -r "$SYSTEM_LIBGLUT" ]]; then
+  if [[ -n "${LD_PRELOAD:-}" ]]; then
+    export LD_PRELOAD="${SYSTEM_LIBGL}:${SYSTEM_LIBGLUT}:${LD_PRELOAD}"
+  else
+    export LD_PRELOAD="${SYSTEM_LIBGL}:${SYSTEM_LIBGLUT}"
+  fi
+fi
+
+if [[ -n "${DISPLAY:-}" ]]; then
+  export WAYLAND_DISPLAY=
+fi
+
+exec "$MATLAB_BIN" "$@"
+```
+
+作用：
+
+- 强制使用系统 `libGL/libglut`
+- 隐藏 `WAYLAND_DISPLAY`，让 PTB 走 XWayland workaround
+
+### 2. MATLAB startup
+
+路径：
+
+```text
+~/Documents/MATLAB/startup.m
+```
+
+当前有效内容：
+
+```matlab
+% Local MATLAB startup for Psychtoolbox on Debian sid.
+
+ptbCandidates = {
+    fullfile(getenv('HOME'), '.matlab', 'toolbox', 'Psychtoolbox')
+    '/usr/share/psychtoolbox-3'
+};
+
+ptbRoot = '';
+for idx = 1:numel(ptbCandidates)
+    if isfolder(ptbCandidates{idx})
+        ptbRoot = ptbCandidates{idx};
+        break;
+    end
+end
+
+if ~isempty(ptbRoot)
+    pathEntries = strsplit(path, pathsep);
+    for idx = 1:numel(pathEntries)
+        entry = pathEntries{idx};
+        if contains(entry, 'Psychtoolbox') && ~startsWith(entry, ptbRoot)
+            if isfolder(entry)
+                rmpath(entry);
+            end
+        end
+    end
+
+    if isempty(which('PsychtoolboxVersion'))
+        addpath(genpath(ptbRoot));
+    end
+end
+
+if isempty(getenv('WAYLAND_DISPLAY')) && ~isempty(which('Screen'))
+    Screen('Preference', 'ConserveVRAM', 2^19);
+end
+```
+
+作用：
+
+- 保证 PTB path 进入 MATLAB
+- 清理旧的/重复的 PTB path
+- 在 workaround 模式下设置 `ConserveVRAM`
+
+### 3. 用户级 pathdef
+
+路径：
+
+```text
+~/Documents/MATLAB/pathdef.m
+```
+
+作用：
+
+- 不依赖 `/usr/local/MATLAB/.../pathdef.m` 的写权限
+- 保证 fresh MATLAB 会话也能找到 PTB
 
 ---
 
-## Step 2 — 下载并解压 PTB
+## 安装流程
 
-`DownloadPsychtoolbox.m` 已失效（GitHub 关闭了它依赖的 SVN 接口）。直接从 GitHub Release 下载 zip：
+### 1. 下载并解压 PTB
 
 ```bash
-wget -O ~/Downloads/PTB-3.0.19.16.zip \
-  "https://github.com/Psychtoolbox-3/Psychtoolbox-3/releases/download/3.0.19.16/3.0.19.16.zip"
+curl -L -o ~/Downloads/PTB-3.0.22.2.zip \
+  https://github.com/Psychtoolbox-3/Psychtoolbox-3/releases/download/3.0.22.2/3.0.22.2.zip
 
 mkdir -p ~/.matlab/toolbox
-cd ~/.matlab/toolbox
-unzip ~/Downloads/PTB-3.0.19.16.zip
+unzip -oq ~/Downloads/PTB-3.0.22.2.zip -d ~/.matlab/toolbox
 ```
 
----
+### 2. 处理 `SetupPsychtoolbox(1)` 的 `savepath` 权限问题
 
-## Step 3 — 运行 SetupPsychtoolbox
+`SetupPsychtoolbox(1)` 默认想写：
 
-如果是在旧版本上重装，需要先清理 MATLAB 路径中的旧 PTB 条目（重装可能积累数百个重复路径，导致静默错误）：
+```text
+/usr/local/MATLAB/R2026a/toolbox/local/pathdef.m
+```
+
+普通用户不可写，所以先做：
+
+```bash
+cp /usr/local/MATLAB/R2026a/toolbox/local/pathdef.m \
+  ~/.matlab/toolbox/Psychtoolbox/pathdef.m
+
+chmod u+w ~/.matlab/toolbox/Psychtoolbox/pathdef.m
+```
+
+然后运行：
+
+```bash
+matlab -batch "cd(fullfile(getenv('HOME'), '.matlab', 'toolbox', 'Psychtoolbox')); SetupPsychtoolbox(1);"
+```
+
+再保存用户级 path：
+
+```bash
+matlab -batch "disp(savepath(fullfile(getenv('HOME'), 'Documents', 'MATLAB', 'pathdef.m')))"
+```
+
+最后删掉临时文件：
+
+```bash
+rm ~/.matlab/toolbox/Psychtoolbox/pathdef.m
+```
+
+### 3. 启用 license management
+
+在 MATLAB 中运行：
 
 ```matlab
-% 在 MATLAB 中执行 —— 清除所有 PTB 路径条目后重新 setup
-p = path;
-parts = strsplit(p, ':');
-path(strjoin(parts(~contains(parts, 'Psychtoolbox')), ':'));
-savepath;
-
-cd('~/.matlab/toolbox/Psychtoolbox');
-SetupPsychtoolbox(1);   % 1 = 非交互模式
+PsychLicenseHandling('Setup')
 ```
+
+流程：
+
+- 同意 online license management
+- 输入 license key / credentials，或者直接回车启用 free trial
+
+### 4. 放置 3 个关键文件
+
+- `~/.local/bin/matlab`
+- `~/Documents/MATLAB/startup.m`
+- `~/Documents/MATLAB/pathdef.m`
 
 ---
 
-## Step 4 — 修复 MEX 文件的可执行栈标志
+## 系统级配置
 
-**症状：**
+执行：
+
+```bash
+sudo groupadd --force psychtoolbox
+
+sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/psychtoolbox.rules \
+  /etc/udev/rules.d/
+
+sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/99-psychtoolboxlimits.conf \
+  /etc/security/limits.d/
+
+sudo usermod -a -G psychtoolbox wangzixiong
+sudo usermod -a -G dialout wangzixiong
+sudo usermod -a -G lp wangzixiong
+
+sudo udevadm control --reload
+sudo udevadm trigger
 ```
-Invalid MEX-file 'Screen.mexa64': cannot enable executable stack as shared object requires: Invalid argument
+
+可选：
+
+```bash
+sudo apt install gamemode
+sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/gamemode.ini /etc/gamemode.ini
 ```
 
-**原因：** PTB 的 MEX 二进制文件编译时带有 `GNU_STACK RWE`（可执行栈）标志。Linux kernel ≥ 6.x 的安全策略会在加载时拒绝此标志。
+之后 logout/login 或 reboot。
 
-**修复：**
+---
+
+## 验证结果
+
+已成功运行：
+
+```matlab
+AssertOpenGL;
+[win, rect] = PsychImaging('OpenWindow', max(Screen('Screens')), 0);
+vbl = Screen('Flip', win);
+WaitSecs(0.2);
+Screen('CloseAll');
+```
+
+实测结论：
+
+- `Screen('OpenWindow')` 成功
+- MATLAB 不 crash
+- `Screen('Version').os` 返回 `GNU/Linux X11`
+- OpenGL renderer 识别到 NVIDIA RTX 5080
+
+仍有 warning：
+
+- Beamposition timestamping unavailable
+- `Screen('Flip')` fallback to basic timestamping
+- suspected triple buffering
+
+因此：
+
+- **开发机可用**
+- **实验机不可直接照搬**
+
+---
+
+## 常见问题速记
+
+### `DownloadPsychtoolbox.m` 失效
+
+直接下载 GitHub release zip，不要走旧 SVN 路线。
+
+### `SetupPsychtoolbox(1)` 卡在 `savepath`
+
+先放临时 `pathdef.m` 到 PTB 根目录，再把最终 path 保存到 `~/Documents/MATLAB/pathdef.m`。
+
+### 纯 Wayland 下 `Screen('OpenWindow')` 拒绝运行
+
+PTB 目前不接受这条路径。开发机使用 `WAYLAND_DISPLAY=` workaround + `ConserveVRAM(2^19)`。
+
+### `OpenWindow` crash / software OpenGL
+
+用系统 OpenGL：
+
+```bash
+LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGL.so.1:/usr/lib/x86_64-linux-gnu/libglut.so.3
+```
+
+### `Invalid MEX-file ... executable stack`
+
+本次 `3.0.22.2` 没遇到，但若未来复现，可试：
+
 ```bash
 for f in ~/.matlab/toolbox/Psychtoolbox/PsychBasic/*.mexa64; do
-    if patchelf --print-execstack "$f" 2>/dev/null | grep -q "X"; then
-        patchelf --clear-execstack "$f"
-        echo "Fixed: $(basename $f)"
-    fi
+  if patchelf --print-execstack "$f" 2>/dev/null | grep -q "X"; then
+    patchelf --clear-execstack "$f"
+  fi
 done
 ```
-
----
-
-## Step 5 — 强制使用 NVIDIA 硬件 OpenGL
-
-**症状：** `Screen('OpenWindow')` 导致 MATLAB 崩溃（segfault），崩溃报告显示：
-```
-OpenGL: software
-Graphics Driver: Uninitialized software
-```
-
-**原因：** MATLAB 在 `$MATLABROOT/sys/opengl/lib/glnxa64/libGL.so.1` 自带了 Mesa 软件渲染库，其优先级高于系统 NVIDIA 驱动（通过 `LD_LIBRARY_PATH`）。PTB 需要硬件 OpenGL，在软件渲染器上会直接崩溃。
-
-**修复：** 在 `~/.zshrc`（或 `~/.bashrc`）中添加 alias，确保 MATLAB 始终以系统 libGL 启动：
-
-```bash
-# 强制使用系统 NVIDIA libGL —— 覆盖 MATLAB 自带的 Mesa 软件渲染器
-alias matlab='DISPLAY=:0 WAYLAND_DISPLAY= \
-  LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGL.so.1:/usr/lib/x86_64-linux-gnu/libglut.so.3 \
-  /usr/local/MATLAB/R2026a/bin/matlab'
-```
-
-根据实际安装路径调整 `/usr/local/MATLAB/R2026a/bin/matlab`。
-
----
-
-## Step 6 — 配置 Wayland 支持
-
-**症状：**
-```
-PTB-ERROR: You are trying to run a Screen() implementation meant *only* for a native XOrg X-Server
-PTB-ERROR: under a XWayland fake X-Server. This is not supported.
-```
-
-**背景：** PTB 的 `Screen.mexa64` 只支持原生 Xorg。在 Wayland 桌面会话下，X11 客户端通过 XWayland（`DISPLAY=:0`）运行，PTB 检测到后直接拒绝。
-
-### 方案 A —— 使用 Xorg 会话（正式实验推荐）
-
-在登录界面点击齿轮图标，选择 **"GNOME on Xorg"** 或 **"Ubuntu on Xorg"**。在原生 Xorg 会话下，PTB 所有功能和时序保证均正常工作。
-
-### 方案 B —— 强制 XWayland（仅供开发调试）
-
-Step 5 中的 alias 已设置 `WAYLAND_DISPLAY=`（空值），可抑制 PTB 的 XWayland 检测。在 `~/Documents/MATLAB/startup.m` 中添加以下内容，在 MATLAB 启动时自动应用所需的 PTB 偏好：
-
-```matlab
-% 允许 Screen() 在 XWayland 下运行 —— 仅供开发，无时序保证
-if isempty(getenv('WAYLAND_DISPLAY'))
-    Screen('Preference', 'ConserveVRAM', 2^19);
-end
-```
-
-> **警告：** 在 XWayland 下，`Screen('Flip')` 的时间戳不准确，偶尔可能卡死。可用于代码开发，不可用于正式数据采集。
-
----
-
-## 全流程速查
-
-```bash
-# 系统依赖
-sudo apt install -y patchelf libglut3.12
-sudo ln -sf /usr/lib/x86_64-linux-gnu/libglut.so.3.12 \
-            /usr/lib/x86_64-linux-gnu/libglut.so.3
-
-# 下载 PTB
-wget -O ~/Downloads/PTB-3.0.19.16.zip \
-  "https://github.com/Psychtoolbox-3/Psychtoolbox-3/releases/download/3.0.19.16/3.0.19.16.zip"
-mkdir -p ~/.matlab/toolbox && cd ~/.matlab/toolbox
-unzip ~/Downloads/PTB-3.0.19.16.zip
-
-# 修复 MEX execstack
-for f in ~/.matlab/toolbox/Psychtoolbox/PsychBasic/*.mexa64; do
-    patchelf --print-execstack "$f" 2>/dev/null | grep -q "X" && \
-    patchelf --clear-execstack "$f" && echo "Fixed: $(basename $f)"
-done
-```
-
-在 MATLAB 中执行：
-```matlab
-p = path; parts = strsplit(p, ':');
-path(strjoin(parts(~contains(parts, 'Psychtoolbox')), ':'));
-savepath;
-cd('~/.matlab/toolbox/Psychtoolbox');
-SetupPsychtoolbox(1);
-```
-
-`~/.zshrc`：
-```bash
-alias matlab='DISPLAY=:0 WAYLAND_DISPLAY= LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGL.so.1:/usr/lib/x86_64-linux-gnu/libglut.so.3 /usr/local/MATLAB/R2026a/bin/matlab'
-```
-
-`~/Documents/MATLAB/startup.m`：
-```matlab
-if isempty(getenv('WAYLAND_DISPLAY'))
-    Screen('Preference', 'ConserveVRAM', 2^19);
-end
-```
-
----
-
-## 关于版本号显示
-
-从 zip 安装的 PTB 会显示：
-```
-3.0.19 - Flavor: Manual Install, <date>
-```
-这是正常现象。`3.0.19` 对应所有 3.0.19.x 发行版；`.16` 后缀是 GitHub release tag，不是 PTB 内部版本号的组成部分。
