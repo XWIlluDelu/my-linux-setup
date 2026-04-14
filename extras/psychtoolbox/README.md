@@ -1,6 +1,10 @@
 # psychtoolbox
 
-Psychtoolbox 3 在 Ubuntu/Debian + MATLAB + Wayland + NVIDIA 环境下的安装笔记，记录常见问题与解决方法。
+Psychtoolbox 3 安装与配置笔记。
 
-- [中文版](PTB-Install-Notes-ZH.md)
+主文档：
+
+- [中文](PTB-Install-Notes-ZH.md)
 - [English](PTB-Install-Notes-EN.md)
+
+两份文档都面向 agent，保留当前最有用的安装决策、关键命令、配置文件位置和常见故障结论。
