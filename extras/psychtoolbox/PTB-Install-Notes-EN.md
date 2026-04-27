@@ -12,16 +12,23 @@ Applies to:
 
 ## Core Takeaways
 
-- PTB version: `3.0.22.2`
+- PTB version: `3.0.19.16` (`Last free dessert`)
 - Install location: `~/.matlab/toolbox/Psychtoolbox`
+- This version does **not** include `PsychLicenseHandling` / online license management.
 - **Pure Wayland is not usable**: if `WAYLAND_DISPLAY` is preserved, `Screen('OpenWindow')` refuses to run because of the XWayland fake X-Server check.
-- **Working dev-machine setup**: keep the desktop on Wayland, but hide `WAYLAND_DISPLAY` in the MATLAB launcher and set `ConserveVRAM(2^19)` in `startup.m`.
+- **Working dev-machine setup**: hide `WAYLAND_DISPLAY` in the MATLAB launcher and preload the system `libGL/libglut`.
+- On this Debian `6.19` kernel, multiple `.mexa64` files also needed their `PT_GNU_STACK` execute bit cleared, otherwise `Screen.mexa64` failed with:
+
+```text
+Invalid MEX-file ... cannot enable executable stack
+```
+
 - This setup has been verified:
+  - `PsychtoolboxVersion` works
   - `AssertOpenGL` works
   - `Screen('OpenWindow')` succeeds
   - MATLAB does not crash
 - This setup is **not suitable for a real experiment machine**, because timing is still unreliable.
-- Current prebuilt PTB MEX files require `PsychLicenseHandling('Setup')`; a free trial can be used initially.
 
 ---
 
@@ -69,7 +76,7 @@ exec "$MATLAB_BIN" "$@"
 Purpose:
 
 - force system `libGL/libglut`
-- hide `WAYLAND_DISPLAY` so PTB uses the XWayland workaround path
+- hide `WAYLAND_DISPLAY` so PTB uses the X11/XWayland path
 
 ### 2. MATLAB startup
 
@@ -114,7 +121,11 @@ if ~isempty(ptbRoot)
 end
 
 if isempty(getenv('WAYLAND_DISPLAY')) && ~isempty(which('Screen'))
-    Screen('Preference', 'ConserveVRAM', 2^19);
+    try
+        Screen('Preference', 'ConserveVRAM', 2^19);
+    catch ME
+        warning('PTB startup hook skipped: %s', ME.message);
+    end
 end
 ```
 
@@ -123,6 +134,7 @@ Purpose:
 - ensure PTB is on the MATLAB path
 - remove stale/duplicate PTB path entries
 - set `ConserveVRAM` when the workaround path is active
+- avoid blocking MATLAB startup if PTB MEX files are temporarily broken
 
 ### 3. User-level pathdef
 
@@ -144,60 +156,75 @@ Purpose:
 ### 1. Download and unpack PTB
 
 ```bash
-curl -L -o ~/Downloads/PTB-3.0.22.2.zip \
-  https://github.com/Psychtoolbox-3/Psychtoolbox-3/releases/download/3.0.22.2/3.0.22.2.zip
+curl -L -o ~/Downloads/PTB-3.0.19.16.zip \
+  https://github.com/Psychtoolbox-3/Psychtoolbox-3/releases/download/3.0.19.16/3.0.19.16.zip
 
 mkdir -p ~/.matlab/toolbox
-unzip -oq ~/Downloads/PTB-3.0.22.2.zip -d ~/.matlab/toolbox
+rm -rf ~/.matlab/toolbox/Psychtoolbox
+unzip -oq ~/Downloads/PTB-3.0.19.16.zip -d ~/.matlab/toolbox
 ```
 
-### 2. Work around the `SetupPsychtoolbox(1)` `savepath` permission issue
+### 2. Write the MATLAB path manually
 
-`SetupPsychtoolbox(1)` tries to write:
+This setup does **not** call `SetupPsychtoolbox(1)`, because on Linux it
+continues into the interactive `PsychLinuxConfiguration` flow, which is
+undesirable for scripted agent setup.
+
+Instead, add PTB to the live session path directly and then write the
+user-level `pathdef.m`:
+
+```bash
+/home/wangzixiong/.local/bin/matlab -batch "\
+ptbRoot = fullfile(getenv('HOME'), '.matlab', 'toolbox', 'Psychtoolbox'); \
+addpath(genpath(ptbRoot)); \
+try, PsychJavaTrouble(1); catch ME, disp(ME.message); end; \
+disp(savepath(fullfile(getenv('HOME'), 'Documents', 'MATLAB', 'pathdef.m')));"
+```
+
+Notes:
+
+- `PsychJavaTrouble(1)` updates MATLAB's static Java classpath
+- in batch mode it prints a `RETURN/ENTER` warning; this is expected and harmless
+
+### 3. Fix the executable-stack flag on `.mexa64` files if needed
+
+If `Screen.mexa64` fails with:
 
 ```text
-/usr/local/MATLAB/R2026a/toolbox/local/pathdef.m
+Invalid MEX-file ... cannot enable executable stack
 ```
 
-Normal users cannot write there, so first place a temporary `pathdef.m` in the PTB root:
+run:
 
 ```bash
-cp /usr/local/MATLAB/R2026a/toolbox/local/pathdef.m \
-  ~/.matlab/toolbox/Psychtoolbox/pathdef.m
+python - <<'PY'
+import struct
+from pathlib import Path
 
-chmod u+w ~/.matlab/toolbox/Psychtoolbox/pathdef.m
+PT_GNU_STACK = 0x6474E551
+PF_X = 0x1
+root = Path.home() / '.matlab' / 'toolbox' / 'Psychtoolbox'
+
+for path in sorted(root.rglob('*.mexa64')):
+    data = bytearray(path.read_bytes())
+    if data[:4] != b'\x7fELF' or data[4] != 2:
+        continue
+    fmt = '<' if data[5] == 1 else '>'
+    e_phoff = struct.unpack_from(fmt + 'Q', data, 32)[0]
+    e_phentsize = struct.unpack_from(fmt + 'H', data, 54)[0]
+    e_phnum = struct.unpack_from(fmt + 'H', data, 56)[0]
+    changed = False
+    for i in range(e_phnum):
+        off = e_phoff + i * e_phentsize
+        p_type, p_flags = struct.unpack_from(fmt + 'II', data, off)
+        if p_type == PT_GNU_STACK and (p_flags & PF_X):
+            struct.pack_into(fmt + 'I', data, off + 4, p_flags & ~PF_X)
+            changed = True
+    if changed:
+        path.write_bytes(data)
+        print('patched', path)
+PY
 ```
-
-Then run:
-
-```bash
-matlab -batch "cd(fullfile(getenv('HOME'), '.matlab', 'toolbox', 'Psychtoolbox')); SetupPsychtoolbox(1);"
-```
-
-Then save the final user-level path:
-
-```bash
-matlab -batch "disp(savepath(fullfile(getenv('HOME'), 'Documents', 'MATLAB', 'pathdef.m')))"
-```
-
-Finally remove the temporary file:
-
-```bash
-rm ~/.matlab/toolbox/Psychtoolbox/pathdef.m
-```
-
-### 3. Enable license management
-
-Run inside MATLAB:
-
-```matlab
-PsychLicenseHandling('Setup')
-```
-
-Flow:
-
-- consent to online license management
-- enter a paid key / credentials, or just press Enter for a free trial
 
 ### 4. Place the 3 key files
 
@@ -209,7 +236,10 @@ Flow:
 
 ## System-Level Configuration
 
-Run:
+If you only need a dev-machine setup and can tolerate warnings, you can skip
+this initially.
+
+If you need fuller Linux permissions and realtime scheduling support, run:
 
 ```bash
 sudo groupadd --force psychtoolbox
@@ -241,18 +271,21 @@ Then log out / log back in or reboot.
 
 ## Verification Result
 
-Successfully run:
+Successfully run on this machine:
 
 ```matlab
 AssertOpenGL;
-[win, rect] = PsychImaging('OpenWindow', max(Screen('Screens')), 0);
+Screen('Preference', 'SkipSyncTests', 2);
+Screen('Preference', 'VisualDebugLevel', 3);
+[win, rect] = PsychImaging('OpenWindow', max(Screen('Screens')), 0, [0 0 200 200]);
 vbl = Screen('Flip', win);
-WaitSecs(0.2);
+WaitSecs(0.1);
 Screen('CloseAll');
 ```
 
 Observed result:
 
+- `PsychtoolboxVersion` works
 - `Screen('OpenWindow')` succeeds
 - MATLAB does not crash
 - `Screen('Version').os` returns `GNU/Linux X11`
@@ -262,7 +295,7 @@ Remaining warnings:
 
 - beamposition timestamping unavailable
 - `Screen('Flip')` falls back to basic timestamping
-- suspected triple buffering
+- `SkipSyncTests = 2`
 
 Therefore:
 
@@ -277,13 +310,15 @@ Therefore:
 
 Use the GitHub release zip directly. Do not rely on the old SVN-based flow.
 
-### `SetupPsychtoolbox(1)` fails at `savepath`
+### `SetupPsychtoolbox(1)` fails at `savepath` or interactive Linux setup
 
-Place a temporary `pathdef.m` in the PTB root, then save the final path into `~/Documents/MATLAB/pathdef.m`.
+On this machine, skip `SetupPsychtoolbox(1)` completely. Instead, add PTB
+with `addpath(genpath(...))` and then save `~/Documents/MATLAB/pathdef.m`.
 
 ### `Screen('OpenWindow')` refuses to run under pure Wayland
 
-PTB does not accept that path here. On a dev machine, use the `WAYLAND_DISPLAY=` workaround plus `ConserveVRAM(2^19)`.
+PTB does not accept that path here. On a dev machine, use the
+`WAYLAND_DISPLAY=` workaround plus `ConserveVRAM(2^19)`.
 
 ### `OpenWindow` crash / software OpenGL
 
@@ -295,12 +330,5 @@ LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGL.so.1:/usr/lib/x86_64-linux-gnu/libglu
 
 ### `Invalid MEX-file ... executable stack`
 
-Not hit in this `3.0.22.2` setup, but if it appears later:
-
-```bash
-for f in ~/.matlab/toolbox/Psychtoolbox/PsychBasic/*.mexa64; do
-  if patchelf --print-execstack "$f" 2>/dev/null | grep -q "X"; then
-    patchelf --clear-execstack "$f"
-  fi
-done
-```
+This **did** occur in the `3.0.19.16` setup on Debian `6.19`. Clear the
+`PT_GNU_STACK` execute bit on all `.mexa64` files using the Python patch above.

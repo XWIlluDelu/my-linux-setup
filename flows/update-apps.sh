@@ -376,7 +376,7 @@ collect_selection_with_text() {
   printf '[INFO] Text mode tips: press y/n then Enter for each item, press Ctrl+C to abort at any time.\n'
 
   prompt_bool_text INSTALL_SHELL_ENV "Install/Update managed shell env, modern CLI tools, starship, and zinit?" "$INSTALL_SHELL_ENV"
-  prompt_bool_text REDEPLOY_SHELL_CONFIG "Redeploy managed shell config files (.profile/.bashrc/.zshrc/.tmux.conf)?" 0
+  prompt_bool_text REDEPLOY_SHELL_CONFIG "Redeploy managed shell config files (.profile/.bashrc/.zshrc/~/.config/starship.toml)?" 0
   prompt_bool_text INSTALL_DESKTOP_ESSENTIALS "Install/Update desktop essentials (mpv, gnome-tweaks, gnome-shell-extension-manager)?" "$INSTALL_DESKTOP_ESSENTIALS"
   prompt_bool_text INSTALL_VSCODE "Install/Update Visual Studio Code?" "$INSTALL_VSCODE"
   prompt_bool_text INSTALL_EDGE "Install/Update Microsoft Edge?" "$INSTALL_EDGE"
@@ -395,7 +395,7 @@ collect_selection_with_whiptail() {
   local -a args=()
 
   args+=("shell_env" "tmux/zsh + modern CLI tools + starship/zinit + managed shell state" "$( [[ "$INSTALL_SHELL_ENV" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("redeploy_shell_config" "Overwrite managed .profile/.bashrc/.zshrc/.tmux.conf" OFF)
+  args+=("redeploy_shell_config" "Overwrite managed .profile/.bashrc/.zshrc/~/.config/starship.toml" OFF)
   args+=("desktop_essentials" "mpv + Tweaks + Extension Manager" "$( [[ "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 ]] && printf ON || printf OFF )")
   args+=("vscode" "Visual Studio Code from the Microsoft repository" "$( [[ "$INSTALL_VSCODE" -eq 1 ]] && printf ON || printf OFF )")
   args+=("edge" "Microsoft Edge from the Microsoft repository" "$( [[ "$INSTALL_EDGE" -eq 1 ]] && printf ON || printf OFF )")

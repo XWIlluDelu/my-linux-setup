@@ -22,7 +22,7 @@ trap cleanup EXIT
 
 usage() {
   cat <<'EOF'
-Install and configure the shared tmux/zsh shell environment.
+Install and configure the shared shell environment.
 
 Usage:
   install-shell-environment.sh [--check] [--apply] [--profile desktop|server] [--update-only] [--config-only]
@@ -183,7 +183,6 @@ clean_shell_env_user_state() {
   info "[shell] Remove managed shell configuration and user-space shell components"
   run_as_target_user "$target_user" "$target_home" rm -f \
     "$target_home/.zshrc" \
-    "$target_home/.tmux.conf" \
     "$target_home/.config/starship.toml" \
     "$target_home/.local/bin/starship" \
     "$target_home/.zcompdump" \
@@ -196,6 +195,19 @@ clean_shell_env_user_state() {
     "$target_home/.config" \
     "$target_home/.local/bin" \
     "$state_dir"
+}
+
+remove_legacy_managed_tmux_config() {
+  local target_user target_home tmux_conf
+  target_user="$1"
+  target_home="$2"
+  tmux_conf="$target_home/.tmux.conf"
+
+  if run_as_target_user "$target_user" "$target_home" test -f "$tmux_conf" && \
+    run_as_target_user "$target_user" "$target_home" sh -c "first_line=\$(sed -n '1p' '$tmux_conf' 2>/dev/null || true); [ \"\$first_line\" = '# Linux Setup tmux config' ]"; then
+    info "[shell] Remove legacy managed ~/.tmux.conf"
+    run_as_target_user "$target_user" "$target_home" rm -f "$tmux_conf"
+  fi
 }
 
 apply_shell_assets() {
@@ -225,8 +237,8 @@ apply_shell_assets() {
   run_as_target_user "$target_user" "$target_home" install -m 644 "$profile_source" "$target_home/.profile"
   run_as_target_user "$target_user" "$target_home" install -m 644 "$bash_source" "$target_home/.bashrc"
   run_as_target_user "$target_user" "$target_home" install -m 644 "$zsh_source" "$target_home/.zshrc"
-  run_as_target_user "$target_user" "$target_home" install -m 644 "$ASSET_DIR/tmux.conf" "$target_home/.tmux.conf"
   run_as_target_user "$target_user" "$target_home" install -m 644 "$ASSET_DIR/starship.toml" "$target_home/.config/starship.toml"
+  remove_legacy_managed_tmux_config "$target_user" "$target_home"
   timestamp="$(date +%Y-%m-%dT%H:%M:%S%:z)"
   marker_path="$(shell_env_profile_marker_for_home "$target_home")"
   run_as_target_user "$target_user" "$target_home" sh -c "printf '%s\n' '$PROFILE' > '$marker_path'"
@@ -334,7 +346,7 @@ if [[ "$APPLY" -ne 1 ]]; then
     cat <<EOF
 This was a check run. The script would:
   1. Skip package installation, starship/zinit refresh, and default-shell changes
-  2. Rewrite managed ~/.profile, ${PROFILE}-specific ~/.bashrc and ~/.zshrc, ~/.tmux.conf, ~/.config/starship.toml, and shell state markers in ${TARGET_HOME}
+  2. Rewrite managed ~/.profile, ${PROFILE}-specific ~/.bashrc and ~/.zshrc, ~/.config/starship.toml, and shell state markers in ${TARGET_HOME}
   3. Preserve the existing starship binary and zinit checkout
 
 Run with --apply to execute.
@@ -346,7 +358,7 @@ This was a check run. The script would:
   2. Remove existing managed shell config files and user-space shell components in ${TARGET_HOME}
   3. Reinstall starship in ${TARGET_HOME}/.local/bin
   4. Reinstall zinit in ${TARGET_HOME}/.local/share/zinit/zinit.git
-  5. Write managed ~/.profile, ${PROFILE}-specific ~/.bashrc and ~/.zshrc, ~/.tmux.conf, ~/.config/starship.toml, and shell state markers
+  5. Write managed ~/.profile, ${PROFILE}-specific ~/.bashrc and ~/.zshrc, ~/.config/starship.toml, and shell state markers
   6. $( [[ "$UPDATE_ONLY" -eq 1 ]] && printf 'Skip default-shell changes for %s' "$TARGET_USER" || printf 'Try to switch the default shell for %s to zsh' "$TARGET_USER" )
   7. Preload zsh plugins for the target user
 

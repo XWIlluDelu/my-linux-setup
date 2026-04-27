@@ -16,18 +16,9 @@
 
 ### Ghostty 默认终端
 
-把 Ghostty 设为常见 Linux 桌面栈下的默认终端：
+GNOME 下基于 `xdg-terminal-exec` 的默认终端设置说明见：
 
-```bash
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --check
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply
-```
-
-如果还想顺手设置 Debian/Ubuntu 的 `x-terminal-emulator`：
-
-```bash
-bash ~/my-linux-setup/extras/ghostty-default-terminal/ghostty-default-terminal.sh --apply --set-alternatives
-```
+`~/my-linux-setup/extras/ghostty-default-terminal/README.md`
 
 ### 装机流程
 
@@ -51,7 +42,7 @@ bash ~/my-linux-setup/manage.sh setup stage2 --apply --profile server
 
 ### 更新与维护
 
-只重写托管 shell 配置文件（`.profile`、`.bashrc`、`.zshrc`、`.tmux.conf`、`~/.config/starship.toml`），不会安装额外 shell 工具包：
+只重写托管 shell 配置文件（`.profile`、`.bashrc`、`.zshrc`、`~/.config/starship.toml`），不会安装额外 shell 工具包：
 
 ```bash
 bash ~/my-linux-setup/manage.sh shell sync --apply --profile desktop
