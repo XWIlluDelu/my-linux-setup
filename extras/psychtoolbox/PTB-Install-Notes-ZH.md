@@ -12,16 +12,23 @@
 
 ## 核心结论
 
-- PTB 版本：`3.0.22.2`
+- PTB 版本：`3.0.19.16` (`Last free dessert`)
 - 安装位置：`~/.matlab/toolbox/Psychtoolbox`
+- 该版本 **不包含** `PsychLicenseHandling` / online license management。
 - **纯 Wayland 不可用**：保留 `WAYLAND_DISPLAY` 时，`Screen('OpenWindow')` 会因 XWayland fake X-Server 检查而拒绝运行。
-- **开发机可用方案**：MATLAB 在 Wayland 桌面中启动，但 launcher 清空 `WAYLAND_DISPLAY`，并在 `startup.m` 中设置 `ConserveVRAM(2^19)`。
+- **开发机可用方案**：MATLAB launcher 清空 `WAYLAND_DISPLAY`，并预加载系统 `libGL/libglut`。
+- 本机在 Debian `6.19` 内核下，多个 `.mexa64` 还需要额外清掉 `PT_GNU_STACK` execute bit，否则 `Screen.mexa64` 会报：
+
+```text
+Invalid MEX-file ... cannot enable executable stack
+```
+
 - 该方案已验证：
+  - `PsychtoolboxVersion` 正常
   - `AssertOpenGL` 正常
   - `Screen('OpenWindow')` 可成功开窗
   - MATLAB 不 crash
 - 该方案**不适合正式实验机**，因为 timing 仍不可靠。
-- 当前 PTB 预编译 MEX 需要 `PsychLicenseHandling('Setup')`，可先用 free trial。
 
 ---
 
@@ -69,7 +76,7 @@ exec "$MATLAB_BIN" "$@"
 作用：
 
 - 强制使用系统 `libGL/libglut`
-- 隐藏 `WAYLAND_DISPLAY`，让 PTB 走 XWayland workaround
+- 隐藏 `WAYLAND_DISPLAY`，让 PTB 走 X11/XWayland 路径
 
 ### 2. MATLAB startup
 
@@ -114,7 +121,11 @@ if ~isempty(ptbRoot)
 end
 
 if isempty(getenv('WAYLAND_DISPLAY')) && ~isempty(which('Screen'))
-    Screen('Preference', 'ConserveVRAM', 2^19);
+    try
+        Screen('Preference', 'ConserveVRAM', 2^19);
+    catch ME
+        warning('PTB startup hook skipped: %s', ME.message);
+    end
 end
 ```
 
@@ -123,6 +134,7 @@ end
 - 保证 PTB path 进入 MATLAB
 - 清理旧的/重复的 PTB path
 - 在 workaround 模式下设置 `ConserveVRAM`
+- 即使 PTB MEX 暂时坏掉，也不阻断 MATLAB 启动
 
 ### 3. 用户级 pathdef
 
@@ -144,60 +156,73 @@ end
 ### 1. 下载并解压 PTB
 
 ```bash
-curl -L -o ~/Downloads/PTB-3.0.22.2.zip \
-  https://github.com/Psychtoolbox-3/Psychtoolbox-3/releases/download/3.0.22.2/3.0.22.2.zip
+curl -L -o ~/Downloads/PTB-3.0.19.16.zip \
+  https://github.com/Psychtoolbox-3/Psychtoolbox-3/releases/download/3.0.19.16/3.0.19.16.zip
 
 mkdir -p ~/.matlab/toolbox
-unzip -oq ~/Downloads/PTB-3.0.22.2.zip -d ~/.matlab/toolbox
+rm -rf ~/.matlab/toolbox/Psychtoolbox
+unzip -oq ~/Downloads/PTB-3.0.19.16.zip -d ~/.matlab/toolbox
 ```
 
-### 2. 处理 `SetupPsychtoolbox(1)` 的 `savepath` 权限问题
+### 2. 手工写入 MATLAB path
 
-`SetupPsychtoolbox(1)` 默认想写：
+这里不直接跑 `SetupPsychtoolbox(1)`，因为它在 Linux 上会继续进入交互式
+`PsychLinuxConfiguration`，不适合 agent 自动化。
+
+改为直接把 PTB 加到当前 session path，然后写入用户级 `pathdef.m`：
+
+```bash
+/home/wangzixiong/.local/bin/matlab -batch "\
+ptbRoot = fullfile(getenv('HOME'), '.matlab', 'toolbox', 'Psychtoolbox'); \
+addpath(genpath(ptbRoot)); \
+try, PsychJavaTrouble(1); catch ME, disp(ME.message); end; \
+disp(savepath(fullfile(getenv('HOME'), 'Documents', 'MATLAB', 'pathdef.m')));"
+```
+
+说明：
+
+- `PsychJavaTrouble(1)` 会更新 MATLAB 静态 Java classpath
+- batch 模式下它会打印一个关于 `RETURN/ENTER` 的 warning，这是已知现象，不影响结果
+
+### 3. 修复 `.mexa64` 的 executable-stack 标记
+
+若 `Screen.mexa64` 报：
 
 ```text
-/usr/local/MATLAB/R2026a/toolbox/local/pathdef.m
+Invalid MEX-file ... cannot enable executable stack
 ```
 
-普通用户不可写，所以先做：
+则运行：
 
 ```bash
-cp /usr/local/MATLAB/R2026a/toolbox/local/pathdef.m \
-  ~/.matlab/toolbox/Psychtoolbox/pathdef.m
+python - <<'PY'
+import struct
+from pathlib import Path
 
-chmod u+w ~/.matlab/toolbox/Psychtoolbox/pathdef.m
+PT_GNU_STACK = 0x6474E551
+PF_X = 0x1
+root = Path.home() / '.matlab' / 'toolbox' / 'Psychtoolbox'
+
+for path in sorted(root.rglob('*.mexa64')):
+    data = bytearray(path.read_bytes())
+    if data[:4] != b'\x7fELF' or data[4] != 2:
+        continue
+    fmt = '<' if data[5] == 1 else '>'
+    e_phoff = struct.unpack_from(fmt + 'Q', data, 32)[0]
+    e_phentsize = struct.unpack_from(fmt + 'H', data, 54)[0]
+    e_phnum = struct.unpack_from(fmt + 'H', data, 56)[0]
+    changed = False
+    for i in range(e_phnum):
+        off = e_phoff + i * e_phentsize
+        p_type, p_flags = struct.unpack_from(fmt + 'II', data, off)
+        if p_type == PT_GNU_STACK and (p_flags & PF_X):
+            struct.pack_into(fmt + 'I', data, off + 4, p_flags & ~PF_X)
+            changed = True
+    if changed:
+        path.write_bytes(data)
+        print('patched', path)
+PY
 ```
-
-然后运行：
-
-```bash
-matlab -batch "cd(fullfile(getenv('HOME'), '.matlab', 'toolbox', 'Psychtoolbox')); SetupPsychtoolbox(1);"
-```
-
-再保存用户级 path：
-
-```bash
-matlab -batch "disp(savepath(fullfile(getenv('HOME'), 'Documents', 'MATLAB', 'pathdef.m')))"
-```
-
-最后删掉临时文件：
-
-```bash
-rm ~/.matlab/toolbox/Psychtoolbox/pathdef.m
-```
-
-### 3. 启用 license management
-
-在 MATLAB 中运行：
-
-```matlab
-PsychLicenseHandling('Setup')
-```
-
-流程：
-
-- 同意 online license management
-- 输入 license key / credentials，或者直接回车启用 free trial
 
 ### 4. 放置 3 个关键文件
 
@@ -209,7 +234,9 @@ PsychLicenseHandling('Setup')
 
 ## 系统级配置
 
-执行：
+若只需要开发机可用、并且接受 warning，可先不做。
+
+若需要更完整的 Linux 权限与实时调度配置，则执行：
 
 ```bash
 sudo groupadd --force psychtoolbox
@@ -241,18 +268,21 @@ sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/gamemode.ini /etc/gamemode.ini
 
 ## 验证结果
 
-已成功运行：
+本机已成功运行：
 
 ```matlab
 AssertOpenGL;
-[win, rect] = PsychImaging('OpenWindow', max(Screen('Screens')), 0);
+Screen('Preference', 'SkipSyncTests', 2);
+Screen('Preference', 'VisualDebugLevel', 3);
+[win, rect] = PsychImaging('OpenWindow', max(Screen('Screens')), 0, [0 0 200 200]);
 vbl = Screen('Flip', win);
-WaitSecs(0.2);
+WaitSecs(0.1);
 Screen('CloseAll');
 ```
 
 实测结论：
 
+- `PsychtoolboxVersion` 正常
 - `Screen('OpenWindow')` 成功
 - MATLAB 不 crash
 - `Screen('Version').os` 返回 `GNU/Linux X11`
@@ -262,7 +292,7 @@ Screen('CloseAll');
 
 - Beamposition timestamping unavailable
 - `Screen('Flip')` fallback to basic timestamping
-- suspected triple buffering
+- `SkipSyncTests = 2`
 
 因此：
 
@@ -277,9 +307,10 @@ Screen('CloseAll');
 
 直接下载 GitHub release zip，不要走旧 SVN 路线。
 
-### `SetupPsychtoolbox(1)` 卡在 `savepath`
+### `SetupPsychtoolbox(1)` 卡在 `savepath` 或 Linux 交互配置
 
-先放临时 `pathdef.m` 到 PTB 根目录，再把最终 path 保存到 `~/Documents/MATLAB/pathdef.m`。
+本机不走 `SetupPsychtoolbox(1)`，直接手工 `addpath(genpath(...))` 后再写
+`~/Documents/MATLAB/pathdef.m`。
 
 ### 纯 Wayland 下 `Screen('OpenWindow')` 拒绝运行
 
@@ -295,12 +326,5 @@ LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGL.so.1:/usr/lib/x86_64-linux-gnu/libglu
 
 ### `Invalid MEX-file ... executable stack`
 
-本次 `3.0.22.2` 没遇到，但若未来复现，可试：
-
-```bash
-for f in ~/.matlab/toolbox/Psychtoolbox/PsychBasic/*.mexa64; do
-  if patchelf --print-execstack "$f" 2>/dev/null | grep -q "X"; then
-    patchelf --clear-execstack "$f"
-  fi
-done
-```
+本次 `3.0.19.16` 在 Debian `6.19` 内核下实际遇到，需要批量清掉所有
+`.mexa64` 的 `PT_GNU_STACK` execute bit。直接用上面那段 Python patch。

@@ -27,31 +27,5 @@ link-previews = true
 mouse-hide-while-typing = true
 cursor-click-to-move = true
 
-# Keybindings
-keybind = global:super+t=new_window
-keybind = ctrl+t=unbind
-
-# Keybindings Leader: Ctrl+A
-# (Note: Standard terminal prefix)
-
-# Split Management
-keybind = ctrl+a>shift+backslash=new_split:right
-keybind = ctrl+a>-=new_split:down
-keybind = ctrl+a>h=goto_split:left
-keybind = ctrl+a>j=goto_split:down
-keybind = ctrl+a>k=goto_split:up
-keybind = ctrl+a>l=goto_split:right
-keybind = ctrl+a>z=toggle_split_zoom
-keybind = ctrl+a>e=equalize_splits
-
-# Tab Management
-keybind = ctrl+a>c=new_tab
-keybind = ctrl+a>shift+l=next_tab
-keybind = ctrl+a>shift+h=previous_tab
-keybind = ctrl+a>comma=move_tab:-1
-keybind = ctrl+a>period=move_tab:1
-
 # System
 gtk-single-instance = true
-keybind = ctrl+a>r=reload_config
-keybind = ctrl+a>x=close_surface

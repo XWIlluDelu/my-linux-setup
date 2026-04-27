@@ -290,7 +290,7 @@ collect_selection_with_whiptail() {
       --title "Linux Setup Stage 2" \
       --checklist "Select what to install after the Fresh snapshot.\n\nKeys: ↑↓ move, Space toggle, Tab switch buttons, Enter confirm, Esc cancel." \
       24 90 14 \
-      "shell_env" "tmux/zsh/starship/zinit + managed shell profile" "$(selected_on_off_label "$INSTALL_SHELL_ENV")" \
+      "shell_env" "zsh/tmux packages + starship/zinit + managed shell profile" "$(selected_on_off_label "$INSTALL_SHELL_ENV")" \
       "desktop_essentials" "core desktop apps: mpv, Tweaks, Extension Manager" "$(selected_on_off_label "$INSTALL_DESKTOP_ESSENTIALS")" \
       "chinese_support" "fcitx5 + rime + Simplified Chinese font preference" "$(selected_on_off_label "$INSTALL_CHINESE_SUPPORT")" \
       "vscode" "Visual Studio Code from Microsoft repository" "$(selected_on_off_label "$INSTALL_VSCODE")" \
