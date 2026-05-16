@@ -1,52 +1,30 @@
 # Psychtoolbox 3 Installation Notes
-## Agent Reference
 
-Applies to:
+Applies to Debian sid, MATLAB R2026a, Wayland desktop session, and NVIDIA GPU.
 
-- Debian sid
-- MATLAB R2026a
-- Wayland desktop session
-- NVIDIA GPU
+## Conclusions
 
----
+| Item | State |
+|---|---|
+| PTB version | `3.0.19.16` (`Last free dessert`) |
+| Install location | `~/.matlab/toolbox/Psychtoolbox` |
+| License management | This version does not include `PsychLicenseHandling` / online license management |
+| Wayland | Pure Wayland is not usable; `Screen('OpenWindow')` is rejected by the XWayland fake X-Server check |
+| Working dev-machine path | MATLAB launcher clears `WAYLAND_DISPLAY` and preloads system `libGL/libglut` |
+| Experiment-machine suitability | Not suitable as-is; timing remains unreliable |
 
-## Core Takeaways
-
-- PTB version: `3.0.19.16` (`Last free dessert`)
-- Install location: `~/.matlab/toolbox/Psychtoolbox`
-- This version does **not** include `PsychLicenseHandling` / online license management.
-- **Pure Wayland is not usable**: if `WAYLAND_DISPLAY` is preserved, `Screen('OpenWindow')` refuses to run because of the XWayland fake X-Server check.
-- **Working dev-machine setup**: hide `WAYLAND_DISPLAY` in the MATLAB launcher and preload the system `libGL/libglut`.
-- On this Debian `6.19` kernel, multiple `.mexa64` files also needed their `PT_GNU_STACK` execute bit cleared, otherwise `Screen.mexa64` failed with:
+On Debian kernel `6.19`, multiple `.mexa64` files also need the `PT_GNU_STACK` executable bit cleared. Otherwise `Screen.mexa64` fails with:
 
 ```text
 Invalid MEX-file ... cannot enable executable stack
 ```
 
-- This setup has been verified:
-  - `PsychtoolboxVersion` works
-  - `AssertOpenGL` works
-  - `Screen('OpenWindow')` succeeds
-  - MATLAB does not crash
-- This setup is **not suitable for a real experiment machine**, because timing is still unreliable.
+## Key files
 
----
-
-## Key Files
-
-### 1. MATLAB launcher
-
-Path:
-
-```text
-~/.local/bin/matlab
-```
-
-Current working content:
+### `~/.local/bin/matlab`
 
 ```bash
 #!/usr/bin/env bash
-
 set -euo pipefail
 
 MATLAB_BIN="/usr/local/MATLAB/R2026a/bin/matlab"
@@ -70,23 +48,14 @@ if [[ -n "${DISPLAY:-}" ]]; then
   export WAYLAND_DISPLAY=
 fi
 
+if [[ "$#" -eq 0 ]]; then
+  exec "$MATLAB_BIN" -desktop
+fi
+
 exec "$MATLAB_BIN" "$@"
 ```
 
-Purpose:
-
-- force system `libGL/libglut`
-- hide `WAYLAND_DISPLAY` so PTB uses the X11/XWayland path
-
-### 2. MATLAB startup
-
-Path:
-
-```text
-~/Documents/MATLAB/startup.m
-```
-
-Current working content:
+### `~/Documents/MATLAB/startup.m`
 
 ```matlab
 % Local MATLAB startup for Psychtoolbox on Debian sid.
@@ -129,49 +98,23 @@ if isempty(getenv('WAYLAND_DISPLAY')) && ~isempty(which('Screen'))
 end
 ```
 
-Purpose:
+### `~/Documents/MATLAB/pathdef.m`
 
-- ensure PTB is on the MATLAB path
-- remove stale/duplicate PTB path entries
-- set `ConserveVRAM` when the workaround path is active
-- avoid blocking MATLAB startup if PTB MEX files are temporarily broken
+User-level pathdef, avoiding write access requirements under `/usr/local/MATLAB/.../pathdef.m`.
 
-### 3. User-level pathdef
+## Install flow
 
-Path:
-
-```text
-~/Documents/MATLAB/pathdef.m
-```
-
-Purpose:
-
-- avoid relying on write access to `/usr/local/MATLAB/.../pathdef.m`
-- make fresh MATLAB sessions reliably find PTB
-
----
-
-## Install Flow
-
-### 1. Download and unpack PTB
+Download and unpack:
 
 ```bash
 curl -L -o ~/Downloads/PTB-3.0.19.16.zip \
   https://github.com/Psychtoolbox-3/Psychtoolbox-3/releases/download/3.0.19.16/3.0.19.16.zip
-
 mkdir -p ~/.matlab/toolbox
 rm -rf ~/.matlab/toolbox/Psychtoolbox
 unzip -oq ~/Downloads/PTB-3.0.19.16.zip -d ~/.matlab/toolbox
 ```
 
-### 2. Write the MATLAB path manually
-
-This setup does **not** call `SetupPsychtoolbox(1)`, because on Linux it
-continues into the interactive `PsychLinuxConfiguration` flow, which is
-undesirable for scripted agent setup.
-
-Instead, add PTB to the live session path directly and then write the
-user-level `pathdef.m`:
+Do not run `SetupPsychtoolbox(1)`; it enters an interactive Linux configuration path that is unsuitable for scripted agent setup. Write the user path manually:
 
 ```bash
 /home/wangzixiong/.local/bin/matlab -batch "\
@@ -181,20 +124,7 @@ try, PsychJavaTrouble(1); catch ME, disp(ME.message); end; \
 disp(savepath(fullfile(getenv('HOME'), 'Documents', 'MATLAB', 'pathdef.m')));"
 ```
 
-Notes:
-
-- `PsychJavaTrouble(1)` updates MATLAB's static Java classpath
-- in batch mode it prints a `RETURN/ENTER` warning; this is expected and harmless
-
-### 3. Fix the executable-stack flag on `.mexa64` files if needed
-
-If `Screen.mexa64` fails with:
-
-```text
-Invalid MEX-file ... cannot enable executable stack
-```
-
-run:
+If executable-stack errors occur, patch `.mexa64` files:
 
 ```bash
 python - <<'PY'
@@ -226,34 +156,17 @@ for path in sorted(root.rglob('*.mexa64')):
 PY
 ```
 
-### 4. Place the 3 key files
+## Optional system-level configuration
 
-- `~/.local/bin/matlab`
-- `~/Documents/MATLAB/startup.m`
-- `~/Documents/MATLAB/pathdef.m`
-
----
-
-## System-Level Configuration
-
-If you only need a dev-machine setup and can tolerate warnings, you can skip
-this initially.
-
-If you need fuller Linux permissions and realtime scheduling support, run:
+A dev machine can skip this. For fuller Linux permissions and realtime scheduling support:
 
 ```bash
 sudo groupadd --force psychtoolbox
-
-sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/psychtoolbox.rules \
-  /etc/udev/rules.d/
-
-sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/99-psychtoolboxlimits.conf \
-  /etc/security/limits.d/
-
+sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/psychtoolbox.rules /etc/udev/rules.d/
+sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/99-psychtoolboxlimits.conf /etc/security/limits.d/
 sudo usermod -a -G psychtoolbox wangzixiong
 sudo usermod -a -G dialout wangzixiong
 sudo usermod -a -G lp wangzixiong
-
 sudo udevadm control --reload
 sudo udevadm trigger
 ```
@@ -265,13 +178,9 @@ sudo apt install gamemode
 sudo cp ~/.matlab/toolbox/Psychtoolbox/PsychBasic/gamemode.ini /etc/gamemode.ini
 ```
 
-Then log out / log back in or reboot.
+Then log out/in or reboot.
 
----
-
-## Verification Result
-
-Successfully run on this machine:
+## Verification
 
 ```matlab
 AssertOpenGL;
@@ -283,52 +192,14 @@ WaitSecs(0.1);
 Screen('CloseAll');
 ```
 
-Observed result:
+Verified: `PsychtoolboxVersion`, `AssertOpenGL`, and `Screen('OpenWindow')` work; MATLAB does not crash; `Screen('Version').os` returns `GNU/Linux X11`; the OpenGL renderer identifies the NVIDIA RTX 5080. Remaining warnings: beamposition timestamping unavailable, `Screen('Flip')` basic timestamping fallback, and `SkipSyncTests = 2`.
 
-- `PsychtoolboxVersion` works
-- `Screen('OpenWindow')` succeeds
-- MATLAB does not crash
-- `Screen('Version').os` returns `GNU/Linux X11`
-- OpenGL renderer identifies the NVIDIA RTX 5080 correctly
+## Common issues
 
-Remaining warnings:
-
-- beamposition timestamping unavailable
-- `Screen('Flip')` falls back to basic timestamping
-- `SkipSyncTests = 2`
-
-Therefore:
-
-- **usable for a dev machine**
-- **not directly suitable for an experiment machine**
-
----
-
-## Common Issues
-
-### `DownloadPsychtoolbox.m` is obsolete
-
-Use the GitHub release zip directly. Do not rely on the old SVN-based flow.
-
-### `SetupPsychtoolbox(1)` fails at `savepath` or interactive Linux setup
-
-On this machine, skip `SetupPsychtoolbox(1)` completely. Instead, add PTB
-with `addpath(genpath(...))` and then save `~/Documents/MATLAB/pathdef.m`.
-
-### `Screen('OpenWindow')` refuses to run under pure Wayland
-
-PTB does not accept that path here. On a dev machine, use the
-`WAYLAND_DISPLAY=` workaround plus `ConserveVRAM(2^19)`.
-
-### `OpenWindow` crash / software OpenGL
-
-Force system OpenGL:
-
-```bash
-LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGL.so.1:/usr/lib/x86_64-linux-gnu/libglut.so.3
-```
-
-### `Invalid MEX-file ... executable stack`
-
-This **did** occur in the `3.0.19.16` setup on Debian `6.19`. Clear the
-`PT_GNU_STACK` execute bit on all `.mexa64` files using the Python patch above.
+| Issue | Fix |
+|---|---|
+| `DownloadPsychtoolbox.m` is obsolete | Download the GitHub release zip directly |
+| `SetupPsychtoolbox(1)` stalls | Do not run it; use `addpath(genpath(...))` and save user-level `pathdef.m` |
+| Pure Wayland refuses `OpenWindow` | Use the `WAYLAND_DISPLAY=` workaround plus `ConserveVRAM(2^19)` |
+| OpenWindow crash / software OpenGL | Preload system `libGL.so.1` and `libglut.so.3` |
+| executable-stack error | Run the Python patch above |

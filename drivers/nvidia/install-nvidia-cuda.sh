@@ -91,7 +91,7 @@ Interactive NVIDIA installer.
 Usage:
   install-nvidia-cuda.sh --check
   install-nvidia-cuda.sh --apply [--yes]
-  install-nvidia-cuda.sh --apply --method deb --cuda 12.8 --driver-branch 570 [options]
+  install-nvidia-cuda.sh --apply --method deb --cuda latest --driver-branch latest [options]
 
 Modes:
   --check   Probe official NVIDIA metadata and print the available choices (default)

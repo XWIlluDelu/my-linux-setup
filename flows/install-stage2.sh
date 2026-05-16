@@ -31,9 +31,6 @@ INSTALL_MAPLE_FONT=0
 INSTALL_MINIFORGE=0
 INSTALL_NVIDIA=1
 
-NVIDIA_ONEPASS_DRIVER_BRANCH="570"
-NVIDIA_ONEPASS_CUDA_FAMILY="12.8"
-
 cleanup() {
   if [[ "${KEEP_STAGE2_PLAN:-0}" != "1" && -n "${PLAN_FILE:-}" && -f "${PLAN_FILE:-}" ]]; then
     rm -f "$PLAN_FILE"
@@ -267,7 +264,7 @@ collect_selection_with_text() {
   printf '[INFO] Text mode tips: press y/n then Enter for each item, press Ctrl+C to abort at any time.\n'
 
   prompt_bool_text INSTALL_SHELL_ENV "Install tmux/zsh shell environment?" "$INSTALL_SHELL_ENV"
-  prompt_bool_text INSTALL_DESKTOP_ESSENTIALS "Install desktop essentials (mpv, gnome-tweaks, gnome-shell-extension-manager)?" "$INSTALL_DESKTOP_ESSENTIALS"
+  prompt_bool_text INSTALL_DESKTOP_ESSENTIALS "Install desktop essentials (mpv, wl-clipboard, gnome-tweaks, gnome-shell-extension-manager)?" "$INSTALL_DESKTOP_ESSENTIALS"
   prompt_bool_text INSTALL_CHINESE_SUPPORT "Install Chinese support (fcitx5, rime, SC font preference)?" "$INSTALL_CHINESE_SUPPORT"
   prompt_bool_text INSTALL_VSCODE "Install Visual Studio Code?" "$INSTALL_VSCODE"
   prompt_bool_text INSTALL_EDGE "Install Microsoft Edge?" "$INSTALL_EDGE"
@@ -291,7 +288,7 @@ collect_selection_with_whiptail() {
       --checklist "Select what to install after the Fresh snapshot.\n\nKeys: ↑↓ move, Space toggle, Tab switch buttons, Enter confirm, Esc cancel." \
       24 90 14 \
       "shell_env" "zsh/tmux packages + starship/zinit + managed shell profile" "$(selected_on_off_label "$INSTALL_SHELL_ENV")" \
-      "desktop_essentials" "core desktop apps: mpv, Tweaks, Extension Manager" "$(selected_on_off_label "$INSTALL_DESKTOP_ESSENTIALS")" \
+      "desktop_essentials" "core desktop apps: mpv, wl-clipboard, Tweaks, Extension Manager" "$(selected_on_off_label "$INSTALL_DESKTOP_ESSENTIALS")" \
       "chinese_support" "fcitx5 + rime + Simplified Chinese font preference" "$(selected_on_off_label "$INSTALL_CHINESE_SUPPORT")" \
       "vscode" "Visual Studio Code from Microsoft repository" "$(selected_on_off_label "$INSTALL_VSCODE")" \
       "edge" "Microsoft Edge from Microsoft repository" "$(selected_on_off_label "$INSTALL_EDGE")" \
@@ -460,9 +457,6 @@ write_summary_file() {
 show_check_preview() {
   local nvidia_preview
   nvidia_preview="$ROOT_DIR/drivers/nvidia/install-nvidia-cuda.sh --apply (only when nvidia=yes)"
-  if stage2_should_use_fixed_nvidia_plan; then
-    nvidia_preview="$ROOT_DIR/drivers/nvidia/install-nvidia-cuda.sh --apply --method deb --cuda 12.8 --driver-branch 570 --lock-driver-branch --install-toolkit --allow-unsupported-repo-override (only when nvidia=yes)"
-  fi
   cat <<EOF
 This was a check run. Stage 2 would execute in this order:
 
@@ -484,31 +478,8 @@ EOF
   print_selection_summary
 }
 
-stage2_should_use_fixed_nvidia_plan() {
-  local stage2_os_id="" stage2_version_id=""
-  if [[ -r /etc/os-release ]]; then
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    stage2_os_id="${ID:-}"
-    stage2_version_id="${VERSION_ID:-}"
-  fi
-  [[ "$stage2_os_id" == "ubuntu" && "$stage2_version_id" == "25.10" ]]
-}
-
 build_stage2_nvidia_args() {
   NVIDIA_ARGS=(--apply)
-  if stage2_should_use_fixed_nvidia_plan; then
-    NVIDIA_ARGS+=(
-      --method deb
-      --cuda "$NVIDIA_ONEPASS_CUDA_FAMILY"
-      --driver-branch "$NVIDIA_ONEPASS_DRIVER_BRANCH"
-      --lock-driver-branch
-      --install-toolkit
-      --allow-unsupported-repo-override
-    )
-    return 0
-  fi
-
   if [[ "$ASSUME_YES" -eq 1 ]]; then
     NVIDIA_ARGS+=(--yes)
   fi
@@ -738,9 +709,6 @@ fi
 
 if [[ "$INSTALL_NVIDIA" -eq 1 ]]; then
   build_stage2_nvidia_args
-  if stage2_should_use_fixed_nvidia_plan; then
-    info "Using the repo-validated Ubuntu 25.10 NVIDIA plan: driver ${NVIDIA_ONEPASS_DRIVER_BRANCH}-open + CUDA ${NVIDIA_ONEPASS_CUDA_FAMILY} + NVIDIA repo override."
-  fi
   run_continue_step \
     nvidia \
     updated \

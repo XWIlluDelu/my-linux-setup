@@ -1,116 +1,147 @@
 # my-linux-setup
 
-自动化 Linux 装机与日常维护工具集。
+Linux 装机、更新、维护脚本集。默认仓库路径：`~/my-linux-setup`。
 
-默认仓库路径是 `~/my-linux-setup`。所有命令默认安全预览（`--check`），加 `--apply` 才会真正执行。
+## 安全模型
 
-不要把 `stage1` 和 `stage2` 连着直接运行。`stage1` 会修改 Btrfs 布局并自动重启；等系统重启完成后，再单独运行 `stage2`。
+- 默认都是预览模式：脚本默认 `--check`，只有显式传 `--apply` 才会改系统。
+- `setup stage1` 会转换 Btrfs 子卷布局并自动重启；不要和 `stage2` 连跑。
+- `setup stage2` 面向 Debian/Ubuntu + Btrfs root；部分底层 task 支持 apt/dnf/zypper/pacman，但完整装机流不等于跨发行版通用。
+- `extras/` 是独立工具或故障记录，不接入 `manage.sh` 主流程。
 
-## 推荐入口
+## 主入口
 
-主入口统一是 `manage.sh`。
+```bash
+bash ~/my-linux-setup/manage.sh --help
+bash ~/my-linux-setup/manage.sh check
+```
 
-## 额外脚本（extras）
+无参数运行 `manage.sh` 会打开交互菜单；有参数时按子命令分发。
 
-`extras/` 下放的是独立工具，不接入 `manage.sh` 主流程，按需单独运行。
+| 命令 | 作用 |
+|---|---|
+| `setup stage1` | 转换 Btrfs root 为 `@rootfs` + `@home`，创建安全快照，重启 |
+| `setup stage2` | 重启后初始化 snapper、移除 snap、升级系统、安装选定组件、cleanup |
+| `update` / `update all` | 更新系统包，刷新已检测到的受管应用和 shell 组件，cleanup |
+| `update packages` | 只运行系统包升级 |
+| `update apps` | 刷新已检测到或交互选中的受管应用和 shell 组件 |
+| `maintain repair` | 修复 Debian/Ubuntu 包状态并重建相关内核产物 |
+| `maintain mirror` | 探测、切换或恢复 APT 镜像 |
+| `snapshot create` | 创建只读 snapper 快照 |
+| `snapshot rollback` | 用 snapper 创建启动级回滚目标 |
+| `shell sync` | 只重写已受管 shell 配置文件 |
+| `driver nvidia` | NVIDIA 驱动 + CUDA 独立安装器 |
 
-### Ghostty 默认终端
+## 装机流程
 
-GNOME 下基于 `xdg-terminal-exec` 的默认终端设置说明见：
-
-`~/my-linux-setup/extras/ghostty-default-terminal/README.md`
-
-### 装机流程
-
-Stage 1：转换 Btrfs 布局并重启
+Stage 1：只在刚装完系统、确认 root 是 Btrfs 且 `/home` 不是独立挂载时执行。
 
 ```bash
 bash ~/my-linux-setup/manage.sh setup stage1 --apply
 ```
 
-Stage 2：重启后继续完成桌面装机
+系统重启后再执行 Stage 2：
 
 ```bash
-bash ~/my-linux-setup/manage.sh setup stage2 --apply
-```
-
-Stage 2（server）：只走 server profile
-
-```bash
+bash ~/my-linux-setup/manage.sh setup stage2 --apply --profile desktop
 bash ~/my-linux-setup/manage.sh setup stage2 --apply --profile server
 ```
 
-### 更新与维护
+Profile 默认项：
 
-只重写托管 shell 配置文件（`.profile`、`.bashrc`、`.zshrc`、`~/.config/starship.toml`），不会安装额外 shell 工具包：
+| 项 | `desktop` | `server` |
+|---|---:|---:|
+| shell 环境 | yes | yes |
+| 桌面基础包 | yes | no |
+| 中文输入/字体支持 | yes | no |
+| VS Code | yes | no |
+| Microsoft Edge | yes | no |
+| NVIDIA 安装器 | yes | yes |
+| Flatpak / WeChat / Clash Verge Rev / Zotero / Obsidian / Ghostty / Maple Font / Miniforge | no | no |
 
-```bash
-bash ~/my-linux-setup/manage.sh shell sync --apply --profile desktop
-```
+不加 `--yes` 时，`stage2 --apply` 会让用户确认 profile 和安装项。
 
-托管 shell 配置的边界：
+## 更新与维护
 
-- `assets/` 里只放 `my-linux-setup` 会安装和管理的工具对应配置
-- 本机特有路径或手动安装工具默认不写进 `assets/`
-- 例如手动安装的 latest `node`、机器特定 SDK 路径、临时代理路径，都应该视为本地配置
-
-如果你执行了 `shell sync`，受管文件会被覆盖；本机特有 shell 恢复策略见：
-
-```bash
-~/my-linux-setup/LOCAL_ENV_AGENT_NOTES.md
-```
-
-完整例行更新。这里会依次处理系统包更新、已受管应用与 shell 组件刷新（包含托管 shell 环境用到的现代 CLI 工具）、以及最后的 cleanup：
+完整例行更新：
 
 ```bash
 bash ~/my-linux-setup/manage.sh update --apply
 ```
 
-只刷新已受管应用与 shell 组件。这里包含仓库路径下的 Edge、VSCode，也包含官方安装路径下的 WeChat、Ghostty、Miniforge 等；同时会补齐托管 shell 环境依赖的现代 CLI 工具（按发行版可用性探测）：
-
-```bash
-bash ~/my-linux-setup/manage.sh update apps --apply
-```
-
-只运行系统包升级这一步：
+只升级系统包：
 
 ```bash
 bash ~/my-linux-setup/manage.sh update packages --apply
 ```
 
-修复 Debian/Ubuntu 包状态：
+刷新受管应用与 shell 组件：
+
+```bash
+bash ~/my-linux-setup/manage.sh update apps --apply
+```
+
+`update apps` 会先检测现有受管状态：已安装/已受管的 Edge、VS Code、Flatpak、WeChat、Clash Verge Rev、Zotero、Obsidian、Ghostty、Maple Font、Miniforge、shell 环境会被默认选中；有 TTY 时可交互增删选择，`--yes` 使用检测结果。
+
+修复包状态：
 
 ```bash
 bash ~/my-linux-setup/manage.sh maintain repair --apply
 ```
 
-APT 镜像探测或切换：
+APT 镜像：
 
 ```bash
 bash ~/my-linux-setup/manage.sh maintain mirror --list
 bash ~/my-linux-setup/manage.sh maintain mirror --auto
+bash ~/my-linux-setup/manage.sh maintain mirror --reset
 ```
 
-### 快照
+## Shell 配置边界
 
-手动创建快照：
+受管文件：
+
+- `~/.profile`
+- `~/.bashrc`
+- `~/.zshrc`
+- `~/.config/starship.toml`
+
+只重写这些文件：
+
+```bash
+bash ~/my-linux-setup/manage.sh shell sync --apply --profile desktop
+bash ~/my-linux-setup/manage.sh shell sync --apply --profile server
+```
+
+`shell sync` 要求目标用户已经存在 linux-setup 受管 shell 状态。机器特有路径、手动安装的 Node.js、临时代理、SDK 路径、Miniforge shell hook 等不写进 `assets/`；本机恢复策略见 [`LOCAL_ENV_AGENT_NOTES.md`](LOCAL_ENV_AGENT_NOTES.md)。
+
+## 快照
 
 ```bash
 bash ~/my-linux-setup/manage.sh snapshot create --apply
+bash ~/my-linux-setup/manage.sh snapshot rollback --apply --snapshot <N>
 ```
 
-回滚到指定快照：
+`rollback` 默认会重启；如只创建回滚目标不重启，传 `--no-reboot`。
+
+## NVIDIA
 
 ```bash
-bash ~/my-linux-setup/manage.sh snapshot rollback --apply
-```
-
-### NVIDIA
-
-交互式安装 NVIDIA 驱动和 CUDA：
-
-```bash
+bash ~/my-linux-setup/manage.sh driver nvidia --check
 bash ~/my-linux-setup/manage.sh driver nvidia --apply
 ```
 
-更多说明见 [drivers/nvidia/README.md](drivers/nvidia/README.md)。
+模块说明见 [`drivers/nvidia/README.md`](drivers/nvidia/README.md)。
+
+## Extras
+
+| 目录 | 内容 |
+|---|---|
+| `extras/app-grid/` | GNOME 应用网格分析与文件夹整理 |
+| `extras/fcitx5-vinput/` | `fcitx5-vinput` 本机配置记录 |
+| `extras/ghostty-default-terminal/` | GNOME `xdg-terminal-exec` 默认终端设置 |
+| `extras/nautilus-enhancements/` | Nautilus `Open in Terminal` 与 `Copy Path` 增强 |
+| `extras/psychtoolbox/` | Psychtoolbox 3 本机安装记录 |
+| `extras/wemeet-screen-share-fix/` | Wemeet 共享屏幕黑屏修复记录 |
+| `extras/zeabur/` | Zeabur 服务器 VPS 化记录 |
+| `extras/my-ai-tools/` | 独立本地/远端辅助工具记录 |

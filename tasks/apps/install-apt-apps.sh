@@ -142,7 +142,7 @@ install_desktop_essentials() {
     return 0
   fi
 
-  packages=(mpv)
+  packages=(mpv wl-clipboard)
   optional_packages=(gnome-tweaks gnome-shell-extension-manager)
 
   for pkg in "${optional_packages[@]}"; do
@@ -396,7 +396,7 @@ if [[ "$APPLY" -ne 1 ]]; then
   cat <<EOF
 This was a check run. The script would:
   1. Configure the Microsoft repositories when VS Code or Edge is selected
-  2. Install desktop essentials when selected: mpv, gnome-tweaks, gnome-shell-extension-manager
+  2. Install desktop essentials when selected: mpv, wl-clipboard, gnome-tweaks, gnome-shell-extension-manager
   3. Install Visual Studio Code when selected
   4. Install Microsoft Edge when selected and supported
   5. On Debian, purge unwanted default desktop apps if present: evolution, firefox-esr, epiphany-browser, gnome-calendar, gnome-contacts, gnome-clocks, gnome-maps, gnome-music, gnome-snapshot, gnome-sound-recorder, gnome-tour, gnome-weather, gnome-characters, gnome-calculator, gnome-software, gnome-software-plugin-deb, gnome-software-plugin-fwupd, gnome-text-editor, loupe, malcontent, malcontent-gui, rhythmbox, shotwell, showtime, totem, xterm, yelp

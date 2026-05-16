@@ -2,13 +2,13 @@
 
 ## 问题现象
 
-- Ubuntu GNOME Wayland 会话下，腾讯会议可以正常进入会议。
+- GNOME Wayland 会话下，腾讯会议可以正常进入会议。
 - 能听到声音、能正常使用大部分功能。
 - **看别人共享屏幕时为空白/黑屏/看不见内容**。
 
 ## 环境
 
-- OS: Ubuntu 25.10
+- OS: Debian GNU/Linux forky/sid
 - Desktop: GNOME on Wayland
 - Wemeet: 3.26.10.401 (`deb` 官方包)
 

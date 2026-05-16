@@ -1,43 +1,33 @@
-# Local Env Agent Notes
+# Local environment notes
 
-This repo's `assets/` should only contain shell config for tools that `my-linux-setup` installs and manages.
+Repository rule: `assets/` contains only generic configuration that `my-linux-setup` installs and manages. Do not add machine-specific PATH entries, proxy settings, SDK paths, or manually installed tool hooks to repository assets.
 
-Local machine-only tools should not be added to `assets/` by default.
-Examples:
-- `node` installed manually as latest
-- ad-hoc SDK paths
-- machine-specific proxy paths
+## Managed shell files
 
-When shell config has been overwritten and needs local recovery, use this workflow:
+`shell sync` and `install-shell-environment.sh --config-only` overwrite:
 
-1. Detect whether a tool is actually installed before writing any shell config.
-2. Only add config when the tool exists but the corresponding shell hook or PATH entry is missing.
-3. Do not add config for tools that are not installed.
+- `~/.profile`
+- `~/.bashrc`
+- `~/.zshrc`
+- `~/.config/starship.toml`
 
-Priority checks:
+They do not own arbitrary local shell snippets outside those files.
 
-- `direnv`
-  - If `command -v direnv` succeeds and shell config does not contain `direnv hook`, add:
-    - `eval "$(direnv hook zsh)"` to `~/.zshrc`
-    - `eval "$(direnv hook bash)"` to `~/.bashrc`
+## Local recovery policy
 
-- `uv`
-  - If `command -v uv` succeeds, usually no extra config is needed if `~/.local/bin` is already in `PATH`.
-  - Only add a PATH entry if `uv` exists in a local user bin directory that is not already covered.
+When a local shell feature disappears after a managed sync:
 
-- `node`
-  - Do not add Node config to repo `assets/`.
-  - If `command -v node` succeeds but the local installation path is not available in interactive shells, add the minimum PATH entry only to the current machine's shell files.
-  - Do not assume a fixed Node install path unless it is already present on the machine.
+1. Check that the tool is installed on this machine.
+2. Add only the minimum missing hook or PATH entry.
+3. Keep the change local to the machine; do not copy it into `assets/` unless it becomes a repo policy.
 
-- `miniforge`
-  - Miniforge is installed by setup, but do not add it to repo `assets/` by default unless that becomes an explicit repo policy.
-  - Prefer the official `conda init` shell block in the current machine's `~/.zshrc` and `~/.bashrc`.
-  - Do not add Miniforge PATH entries to repo `assets/`.
-  - Only fall back to a direct PATH entry when `conda init` is not viable.
+Common local-only cases:
 
-Edit principle:
+| Tool | Policy |
+|---|---|
+| `direnv` | If installed and the hook is absent, add `eval "$(direnv hook zsh)"` to `~/.zshrc` or `eval "$(direnv hook bash)"` to `~/.bashrc`. |
+| `uv` | Usually needs no shell config when `~/.local/bin` is already in `PATH`; add a PATH entry only if the installed binary is otherwise unreachable. |
+| manually installed Node.js | Do not add Node.js paths to repo assets. Add the smallest local PATH entry only when `node` exists but interactive shells cannot find it. |
+| Miniforge | Setup installs Miniforge as a user prefix, but repo assets do not initialize conda. Prefer `conda init` in local shell files; use direct PATH only when `conda init` is not viable. |
 
-- Keep repo `assets/` generic and reproducible.
-- Keep local machine recovery minimal and explicit.
-- Prefer adding the smallest missing shell snippet instead of rewriting unrelated config.
+Keep local recovery explicit and minimal.

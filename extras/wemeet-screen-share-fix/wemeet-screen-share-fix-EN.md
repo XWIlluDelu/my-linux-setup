@@ -2,13 +2,13 @@
 
 ## Symptom
 
-- On Ubuntu GNOME Wayland, Wemeet can join meetings normally.
+- On GNOME Wayland, Wemeet can join meetings normally.
 - Audio and most other features work.
 - **Other participants' shared screens appear blank / black / invisible.**
 
 ## Environment
 
-- OS: Ubuntu 25.10
+- OS: Debian GNU/Linux forky/sid
 - Desktop: GNOME on Wayland
 - Wemeet: 3.26.10.401 (official `deb` package)
 
