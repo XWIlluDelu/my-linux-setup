@@ -12,6 +12,8 @@ This file records the validated local `fcitx5-vinput` voice-input setup on this 
 | Ollama bridge | `http://127.0.0.1:11435/v1` |
 | Ollama native endpoint | `http://127.0.0.1:11434` |
 | Main scene | `zh-en-polish` |
+| fcitx5-vinput version | `2.2.2` |
+| Ollama keep-alive | Bridge requests set `keep_alive=30m`; user timer refreshes the active scene model every 20 minutes |
 | Command mode | Builtin `__command__` remains present, with no hotkey |
 
 Profiles:
@@ -100,18 +102,29 @@ Environment=LD_LIBRARY_PATH=/home/wangzixiong/.local/lib/vosk
 
 ## Ollama bridge
 
-`vinput` uses an OpenAI-compatible endpoint. The local bridge calls Ollama native `/api/chat` and forces `think: false`.
+`vinput` uses an OpenAI-compatible endpoint. The local bridge calls Ollama native `/api/chat`, forces `think: false`, and sets `keep_alive` to keep the post-processing model resident.
 
 Machine-local files:
 
 - `~/.local/bin/ollama_vinput_bridge.py`
 - `~/.config/systemd/user/ollama-vinput-bridge.service`
+- `~/.local/bin/vinput-warm-ollama`
+- `~/.config/systemd/user/vinput-warm-ollama.service`
+- `~/.config/systemd/user/vinput-warm-ollama.timer`
 
 Provider endpoint:
 
 ```text
 http://127.0.0.1:11435/v1
 ```
+
+The bridge remains necessary because direct Ollama `/v1/chat/completions` can return an empty `content` field for `qwen3.5`; the bridge uses native `/api/chat` and returns the message content expected by `vinput`.
+
+Keep-warm policy:
+
+- `ollama-vinput-bridge.service` sets `OLLAMA_KEEP_ALIVE=30m`.
+- `vinput-warm-ollama.timer` runs every 20 minutes.
+- `vinput-warm-ollama` reads the active scene from `~/.config/vinput/config.json` and warms that scene's configured model.
 
 ## Input-method environment
 
@@ -153,6 +166,10 @@ vinput scene use zh-en-polish-low
 vinput scene use __raw__
 vinput daemon status
 vinput llm test ollama
+systemctl --user status vinput-warm-ollama.timer
+systemctl --user start vinput-warm-ollama.service
+systemctl --user list-timers --all | grep vinput-warm
+ollama ps
 systemctl --user restart vinput-daemon.service
 systemctl --user restart ollama-vinput-bridge.service
 journalctl --user -u vinput-daemon.service -n 100 --no-pager
@@ -163,5 +180,6 @@ journalctl --user -u vinput-daemon.service -f --since now --no-pager
 ## Troubleshooting priority
 
 1. ASR misrecognition: homophones, proper nouns, numbers, Chinese/English mixing.
-2. Post-processing instability: prompt/model mismatch.
-3. Daemon activation failure: check `libvosk.so`, wrapper, systemd override, and Ollama bridge first.
+2. Post-processing latency: first verify `ollama ps` and `vinput-warm-ollama.timer`; cold model loading is the usual cause.
+3. Post-processing instability: prompt/model mismatch.
+4. Daemon activation failure: check `libvosk.so`, wrapper, systemd override, and Ollama bridge first.

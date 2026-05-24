@@ -12,6 +12,8 @@
 | Ollama bridge | `http://127.0.0.1:11435/v1` |
 | Ollama native endpoint | `http://127.0.0.1:11434` |
 | 主 scene | `zh-en-polish` |
+| fcitx5-vinput 版本 | `2.2.2` |
+| Ollama 热加载 | Bridge 请求设置 `keep_alive=30m`；user timer 每 20 分钟刷新当前 scene 模型 |
 | Command mode | 内置 `__command__` 保留，但不绑定热键 |
 
 三档 profile：
@@ -100,18 +102,29 @@ Environment=LD_LIBRARY_PATH=/home/wangzixiong/.local/lib/vosk
 
 ## Ollama bridge
 
-`vinput` 使用 OpenAI-compatible endpoint，但 bridge 内部调用 Ollama 原生 `/api/chat` 并固定 `think: false`。
+`vinput` 使用 OpenAI-compatible endpoint，但 bridge 内部调用 Ollama 原生 `/api/chat`，固定 `think: false`，并设置 `keep_alive` 让后处理模型常驻。
 
 本机文件：
 
 - `~/.local/bin/ollama_vinput_bridge.py`
 - `~/.config/systemd/user/ollama-vinput-bridge.service`
+- `~/.local/bin/vinput-warm-ollama`
+- `~/.config/systemd/user/vinput-warm-ollama.service`
+- `~/.config/systemd/user/vinput-warm-ollama.timer`
 
 Provider endpoint：
 
 ```text
 http://127.0.0.1:11435/v1
 ```
+
+Bridge 仍然必要：直接请求 Ollama `/v1/chat/completions` 时，`qwen3.5` 可能返回空 `content`；bridge 走原生 `/api/chat`，再返回 `vinput` 需要的 message content。
+
+热加载策略：
+
+- `ollama-vinput-bridge.service` 设置 `OLLAMA_KEEP_ALIVE=30m`。
+- `vinput-warm-ollama.timer` 每 20 分钟运行一次。
+- `vinput-warm-ollama` 从 `~/.config/vinput/config.json` 读取当前 active scene，并预热该 scene 配置的模型。
 
 ## 输入法环境
 
@@ -153,6 +166,10 @@ vinput scene use zh-en-polish-low
 vinput scene use __raw__
 vinput daemon status
 vinput llm test ollama
+systemctl --user status vinput-warm-ollama.timer
+systemctl --user start vinput-warm-ollama.service
+systemctl --user list-timers --all | grep vinput-warm
+ollama ps
 systemctl --user restart vinput-daemon.service
 systemctl --user restart ollama-vinput-bridge.service
 journalctl --user -u vinput-daemon.service -n 100 --no-pager
@@ -163,5 +180,6 @@ journalctl --user -u vinput-daemon.service -f --since now --no-pager
 ## 故障优先级
 
 1. ASR 听错词：同音字、专有名词、数字、中英混合。
-2. 后处理不稳：prompt 与模型组合不合适。
-3. daemon 激活失败：优先检查 `libvosk.so`、wrapper、systemd override、Ollama bridge。
+2. 后处理延迟：先查 `ollama ps` 和 `vinput-warm-ollama.timer`；通常是模型冷启动。
+3. 后处理不稳：prompt 与模型组合不合适。
+4. daemon 激活失败：优先检查 `libvosk.so`、wrapper、systemd override、Ollama bridge。
