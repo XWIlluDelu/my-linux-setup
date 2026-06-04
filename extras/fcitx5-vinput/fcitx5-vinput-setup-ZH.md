@@ -12,7 +12,7 @@
 | Ollama bridge | `http://127.0.0.1:11435/v1` |
 | Ollama native endpoint | `http://127.0.0.1:11434` |
 | 主 scene | `zh-en-polish` |
-| fcitx5-vinput 版本 | `2.2.2` |
+| fcitx5-vinput 版本 | `2.3.0` |
 | Ollama 热加载 | Bridge 请求设置 `keep_alive=30m`；user timer 每 20 分钟刷新当前 scene 模型 |
 | Command mode | 内置 `__command__` 保留，但不绑定热键 |
 
@@ -76,28 +76,6 @@ ollama pull qwen3.5:0.8b
 ollama pull qwen3.5:2b
 ollama pull qwen3.5:4b
 ollama list
-```
-
-## Debian sid `libvosk.so` 修复
-
-故障特征：
-
-```text
-/usr/bin/vinput-daemon: error while loading shared libraries: libvosk.so: cannot open shared object file
-```
-
-本机修复方案：
-
-- 兼容库：`~/.local/lib/vosk/libvosk.so`
-- systemd override：`~/.config/systemd/user/vinput-daemon.service.d/override.conf`
-- 历史 wrapper：`~/.local/bin/vinput-daemon-wrapper` 仍存在，但当前 systemd unit 未使用它
-- `~/.config/environment.d/vinput-lib.conf` 当前不存在
-
-Override 内容：
-
-```ini
-[Service]
-Environment=LD_LIBRARY_PATH=/home/wangzixiong/.local/lib/vosk
 ```
 
 ## Ollama bridge
@@ -182,4 +160,4 @@ journalctl --user -u vinput-daemon.service -f --since now --no-pager
 1. ASR 听错词：同音字、专有名词、数字、中英混合。
 2. 后处理延迟：先查 `ollama ps` 和 `vinput-warm-ollama.timer`；通常是模型冷启动。
 3. 后处理不稳：prompt 与模型组合不合适。
-4. daemon 激活失败：优先检查 `libvosk.so`、wrapper、systemd override、Ollama bridge。
+4. daemon 激活失败：优先检查 Ollama bridge。
