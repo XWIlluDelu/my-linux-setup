@@ -138,6 +138,7 @@ bash ~/my-linux-setup/manage.sh driver nvidia --apply
 | 目录 | 内容 |
 |---|---|
 | `extras/app-grid/` | GNOME 应用网格分析与文件夹整理 |
+| `extras/edge-sync-fix/` | Edge Linux 同步失败排查与修复记录 |
 | `extras/fcitx5-vinput/` | `fcitx5-vinput` 本机配置记录 |
 | `extras/ghostty-default-terminal/` | GNOME `xdg-terminal-exec` 默认终端设置 |
 | `extras/nautilus-enhancements/` | Nautilus `Open in Terminal` 与 `Copy Path` 增强 |
