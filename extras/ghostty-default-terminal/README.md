@@ -1,24 +1,24 @@
 # ghostty-default-terminal
 
-记录 GNOME `xdg-terminal-exec` 默认终端的用户级优先列表。本机当前保留 GNOME Terminal 优先，Ghostty 作为回退。
+Records the user-level priority list for the GNOME `xdg-terminal-exec` default terminal. Currently keeps GNOME Terminal first, Ghostty as fallback.
 
-## 范围
+## Scope
 
-- 写用户级 `~/.config/gnome-xdg-terminals.list`
-- 写用户级 `~/.config/xdg-terminals.list`
-- 清理 `~/.cache/xdg-terminal-exec`
-- 不处理 Nautilus 右键菜单
-- 不处理 Debian/Ubuntu `x-terminal-emulator`
+- Write user-level `~/.config/gnome-xdg-terminals.list`
+- Write user-level `~/.config/xdg-terminals.list`
+- Clear `~/.cache/xdg-terminal-exec`
+- Does not touch the Nautilus context menu
+- Does not touch the Debian/Ubuntu `x-terminal-emulator`
 
-## 设置
+## Setup
 
-确认 desktop file 存在：
+Confirm the desktop file exists:
 
 ```bash
 ls /usr/share/applications/com.mitchellh.ghostty.desktop
 ```
 
-写入优先列表：
+Write the priority list:
 
 ```bash
 mkdir -p ~/.config
@@ -38,16 +38,16 @@ printf '%s\n' \
 rm -f ~/.cache/xdg-terminal-exec
 ```
 
-## 验证
+## Verification
 
 ```bash
 xdg-terminal-exec --print-id
 xdg-terminal-exec --print-cmd --dir="$HOME"
 ```
 
-预期：
+Expected:
 
-- 本机当前 `--print-id` 返回 `org.gnome.Terminal.desktop`
-- `--print-cmd` 解析到 `gnome-terminal --working-directory <dir>`
+- Locally, `--print-id` returns `org.gnome.Terminal.desktop`
+- `--print-cmd` resolves to `gnome-terminal --working-directory <dir>`
 
-Nautilus 右键菜单增强见 [`../nautilus-enhancements/README.md`](../nautilus-enhancements/README.md)。
+For Nautilus context menu enhancements see [`../nautilus-enhancements/README.md`](../nautilus-enhancements/README.md).

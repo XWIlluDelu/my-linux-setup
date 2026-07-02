@@ -1,16 +1,16 @@
-# GNOME 应用网格整理 — Agent 指令
+# GNOME app grid organization — Agent instructions
 
-> 本文件供 AI agent 阅读，指导其自动整理 GNOME 应用网格中的游离图标。
+> This file is for AI agents and guides automated organization of orphan icons in the GNOME app grid.
 
-## 工作流程
+## Workflow
 
-1. **分析**：运行 `bash app-grid.sh --analyze`，获取 JSON 格式的当前 Dock、文件夹和游离图标列表
-2. **规划**：根据下方用户偏好和分析结果，生成分类 JSON 文件
-3. **应用**：运行 `bash app-grid.sh --apply --folders-json /tmp/folders.json`
+1. **Analyze**: run `bash app-grid.sh --analyze` to get a JSON list of the current Dock, folders, and orphan icons
+2. **Plan**: based on the user preferences below and the analysis, generate a classification JSON file
+3. **Apply**: run `bash app-grid.sh --apply --folders-json /tmp/folders.json`
 
-## 分析输出格式
+## Analysis output format
 
-`--analyze` 输出 JSON 到 stdout（info 日志在 stderr）：
+`--analyze` prints JSON to stdout (info logs go to stderr):
 
 ```json
 {
@@ -28,9 +28,9 @@
 }
 ```
 
-## 分类 JSON 格式
+## Classification JSON format
 
-`--apply --folders-json FILE` 接受的 JSON 格式：
+Accepted by `--apply --folders-json FILE`:
 
 ```json
 {
@@ -53,61 +53,61 @@
 }
 ```
 
-- 不存在的 `.desktop` 文件会被自动跳过
-- 应用后会输出剩余游离图标数量
+- Non-existent `.desktop` files are skipped automatically
+- After applying, the remaining orphan count is printed
 
-## 用户分类偏好
+## User classification preferences
 
-以下是用户习惯的文件夹分类（agent 应以此为基础生成 JSON）：
+The user's habitual folder classifications (the agent should generate JSON from these):
 
-### System — 系统设置/驱动/更新/安全
+### System — system settings / drivers / updates / security
 
-- 网络连接编辑器、磁盘工具、系统监视器、系统设置、GNOME Tweaks
-- 软件源、驱动管理、更新管理器、语言支持、扩展管理器
-- 电源统计、密钥管理（Seahorse）、系统日志、输入法配置
+- Network connection editor, disks utility, system monitor, system settings, GNOME Tweaks
+- Software sources, driver manager, update manager, language support, extension manager
+- Power statistics, key management (Seahorse), system log, input method config
 
-### Utilities — 日常小工具
+### Utilities — everyday small tools
 
-- 计算器、字符映射表、时钟、文本编辑器、字体查看器
-- 图片查看器（Loupe）、文档查看器（Papers）
-- 帮助（Yelp）、htop、vim、mpv、info
+- Calculator, character map, clock, text editor, font viewer
+- Image viewer (Loupe), document viewer (Papers)
+- Help (Yelp), htop, vim, mpv, info
 
-### Online — 在线/网络工具
+### Online — online / network tools
 
-- WeChat、Clash Verge、远程连接类工具
-- 其他偏“联网服务”而非“系统设置”的桌面应用可优先放这里
+- WeChat, Clash Verge, remote-connection tools
+- Other desktop apps that lean toward "online service" rather than "system settings" go here first
 
-### Office — 文档/知识管理
+### Office — documents / knowledge management
 
-- Obsidian、Zotero、LibreOffice 全家桶
-- 其他笔记、写作、阅读、办公类工具可优先放这里
+- Obsidian, Zotero, the LibreOffice suite
+- Other notes, writing, reading, and office tools go here first
 
-### NVIDIA — GPU 开发调试工具
+### NVIDIA — GPU development and debugging tools
 
-- nvidia-settings、Nsight Compute、Nsight Systems、NVVP
-- 其他任何 NVIDIA/CUDA 相关的 `.desktop` 文件
+- nvidia-settings, Nsight Compute, Nsight Systems, NVVP
+- Any other NVIDIA/CUDA-related `.desktop` files
 
-### Fcitx — 输入法相关
+### Fcitx — input method related
 
-- Fcitx5 主程序、配置工具、迁移工具、键盘布局查看器
+- Fcitx5 main program, config tool, migration tool, keyboard layout viewer
 
-### Media — 媒体播放
+### Media — media playback
 
 - mpv
-- 其他偏播放器而不是编辑器的音视频应用可优先放这里
+- Other audio/video apps that are players rather than editors go here first
 
-## 当前偏好补充
+## Additional preferences
 
-- 分类应优先遵从“当前机器已安装的应用”，不要死套固定模板；没有对应应用时文件夹可以省略。
-- 当前用户偏好是保留 `simple-scan`，因此它应优先归入 `Utilities`。
-- 当前用户偏好是保留 `LibreOffice`，并把它与 `Obsidian`、`Zotero` 一起优先归到 `Office`。
-- 当前用户偏好是文档查看器优先保留较新的 `papers`，但只在系统里同时存在 `evince` 和 `papers` 时，才把 `evince` 视为可清理项；若两者只剩其一，则应保留现有那一个。
-- 当前用户偏好是尽量减少低价值默认小工具；若系统里仍出现 `xterm`、`uxterm`、`Text Editor`、`Calculator`，它们属于低优先级保留项，不应优先占据显眼位置。
-- 若 `WeChat`、`Clash Verge`、远程连接类应用同时存在，优先放进 `Online`，不要混入 `System`。
-- 当前用户偏好是不保留 `Showtime`；若它暂时仍存在，可临时放进 `Media`，但清理脚本应默认移除它。
+- Classifications should follow the apps currently installed on this machine; do not apply a fixed template rigidly. Folders may be omitted when no matching app exists.
+- The user prefers to keep `simple-scan`, so it should go into `Utilities` first.
+- The user prefers to keep `LibreOffice`, and group it with `Obsidian` and `Zotero` under `Office` first.
+- The user prefers the newer `papers` as document viewer; only treat `evince` as removable when both `evince` and `papers` exist. If only one remains, keep it.
+- The user prefers to minimize low-value default applets; if `xterm`, `uxterm`, `Text Editor`, or `Calculator` still appear, they are low-priority keepers and should not take prominent positions.
+- If `WeChat`, `Clash Verge`, and remote-connection apps coexist, put them in `Online` first, not `System`.
+- The user prefers not to keep `Showtime`; if it still exists temporarily, it may go into `Media`, but cleanup scripts should remove it by default.
 
-## 注意事项
+## Notes
 
-- 运行分析和应用都**不需要 sudo**（gsettings 操作用户级 dconf）
-- 安装/卸载应用后分类列表可能过时，应重新运行分析
-- 文件夹排列顺序优先建议：System → Utilities → Online → Office → NVIDIA → Fcitx → Media → 其余游离图标
+- Both analysis and apply **do not need sudo** (gsettings operates on user-level dconf)
+- After installing or uninstalling apps, the classification list may be stale; rerun analysis
+- Suggested folder order: System → Utilities → Online → Office → NVIDIA → Fcitx → Media → remaining orphans

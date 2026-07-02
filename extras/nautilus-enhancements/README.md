@@ -1,23 +1,23 @@
 # nautilus-enhancements
 
-Nautilus 增强记录：
+Nautilus enhancement notes:
 
-- `Open in Terminal` 当前由 `/usr/share/nautilus-python/extensions/ghostty.py` 处理
-- 右键菜单增加 `Copy Path`
+- `Open in Terminal` is currently handled by `/usr/share/nautilus-python/extensions/ghostty.py`
+- Context menu gains a `Copy Path` entry
 
-## 当前本机状态
+## Current local state
 
-| 项 | 状态 |
+| Item | State |
 |---|---|
-| `python3-nautilus` | 已安装 |
-| `nautilus-extension-gnome-terminal` | 未安装 |
-| `nautilus-extension-any-terminal` schema | 当前不存在 |
+| `python3-nautilus` | installed |
+| `nautilus-extension-gnome-terminal` | not installed |
+| `nautilus-extension-any-terminal` schema | not present |
 | Ghostty terminal extension | `/usr/share/nautilus-python/extensions/ghostty.py` |
-| Copy Path extension | `/usr/local/share/nautilus-python/extensions/nautilus-copy-path.py` + 配套目录 |
+| Copy Path extension | `/usr/local/share/nautilus-python/extensions/nautilus-copy-path.py` + supporting directory |
 
-## Copy Path 系统级安装
+## Copy Path system-level install
 
-`nautilus-copy-path` 没有 Debian 包。安装到 `/usr/local/share/nautilus-python/extensions`，不走 `pip`，也不混入 dpkg 管理的 `/usr/share/nautilus-python/extensions`。
+`nautilus-copy-path` has no Debian package. Install it into `/usr/local/share/nautilus-python/extensions`, not via `pip`, and keep it out of the dpkg-managed `/usr/share/nautilus-python/extensions`.
 
 ```bash
 rm -rf /tmp/nautilus-copy-path-src /tmp/nautilus-copy-path-system
@@ -28,7 +28,7 @@ cp /tmp/nautilus-copy-path-src/nautilus_copy_path.py /tmp/nautilus-copy-path-src
 cp -r /tmp/nautilus-copy-path-src/translations /tmp/nautilus-copy-path-system/extensions/nautilus-copy-path/
 ```
 
-只保留 `Copy Path`：
+Keep only `Copy Path`:
 
 ```bash
 cat > /tmp/nautilus-copy-path-system/extensions/nautilus-copy-path/config.json <<'EOF'
@@ -50,7 +50,7 @@ cat > /tmp/nautilus-copy-path-system/extensions/nautilus-copy-path/config.json <
 EOF
 ```
 
-安装：
+Install:
 
 ```bash
 sudo mkdir -p /usr/local/share/nautilus-python/extensions
@@ -60,11 +60,11 @@ sudo cp /tmp/nautilus-copy-path-system/extensions/nautilus-copy-path.py /usr/loc
 nautilus -q
 ```
 
-## 验证
+## Verification
 
 ```bash
 find /usr/share/nautilus-python/extensions /usr/local/share/nautilus-python/extensions -maxdepth 2 -type f | sort
 nautilus -q
 ```
 
-预期：Nautilus 右键菜单出现 `Copy Path`；`Open in Terminal` 由已安装的 Ghostty Nautilus Python 扩展提供。
+Expected: the Nautilus context menu shows `Copy Path`; `Open in Terminal` is provided by the installed Ghostty Nautilus Python extension.

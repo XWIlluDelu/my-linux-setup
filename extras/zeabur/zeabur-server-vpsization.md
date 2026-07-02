@@ -1,37 +1,37 @@
-# Zeabur 服务器 VPS 化流程
+# Zeabur server VPSization
 
-目标：
+Goal:
 
-- 打通本地 SSH
-- 固定走 `2222`
-- 用公钥登录
-- 可选停掉 `k3s`，回收内存
+- Get local SSH working
+- Pin it to `2222`
+- Use public-key login
+- Optionally stop `k3s` to reclaim memory
 
-## 1. 网页 SSH 里开临时 `2222`
+## 1. Open a temporary `2222` in the web SSH
 
-在 Zeabur 网页 SSH 里运行：
+Run inside the Zeabur web SSH:
 
 ```bash
 sudo /usr/sbin/sshd -D -e -p 2222 -f /etc/ssh/sshd_config
 ```
 
-这个窗口保持打开。
+Keep this terminal open.
 
-## 2. 本地连上并上传公钥
+## 2. Connect locally and upload the public key
 
-本地测试：
+Test locally:
 
 ```bash
 ssh -p 2222 root@<server-ip>
 ```
 
-上传公钥：
+Upload the key:
 
 ```bash
 ssh-copy-id -i ~/.ssh/id_ed25519.pub -p 2222 root@<server-ip>
 ```
 
-如果你要手动写：
+To write it manually:
 
 ```bash
 install -d -m 700 /root/.ssh
@@ -40,9 +40,9 @@ chmod 600 /root/.ssh/authorized_keys
 chown -R root:root /root/.ssh
 ```
 
-## 3. 把 `2222` 持久化
+## 3. Persist `2222`
 
-服务器上运行：
+On the server:
 
 ```bash
 sudo tee /etc/ssh/sshd_config.d/99-zeabur-dual-port.conf >/dev/null <<'EOF'
@@ -61,9 +61,9 @@ sudo systemctl restart ssh.service
 ss -tnlp | grep -E ':(22|2222)\b'
 ```
 
-## 4. 本地 alias
+## 4. Local alias
 
-`~/.ssh/config`：
+`~/.ssh/config`:
 
 ```sshconfig
 Host ali-tokyo
@@ -74,15 +74,15 @@ Host ali-tokyo
   IdentitiesOnly yes
 ```
 
-本地测试：
+Test locally:
 
 ```bash
 ssh ali-tokyo
 ```
 
-## 5. 停掉 Zeabur 的 k3s
+## 5. Stop Zeabur's k3s
 
-服务器上运行：
+On the server:
 
 ```bash
 sudo systemctl disable --now k3s.service
@@ -90,15 +90,15 @@ sudo /usr/local/bin/k3s-killall.sh
 free -h
 ```
 
-## 6. 验证
+## 6. Verification
 
-本地：
+Local:
 
 ```bash
 ssh ali-tokyo
 ```
 
-服务器：
+Server:
 
 ```bash
 ss -tnlp | grep -E ':(22|2222)\b'

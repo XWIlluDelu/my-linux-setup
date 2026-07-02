@@ -12,7 +12,7 @@ Reads from `~/.claude/` and exposes a browsable interface over all recorded sess
 - **Sort** by recency, title, project, or conversation length
 - **Inspect** any session — view project path, first/last prompts, timestamps, storage size
 - **Delete** sessions with two-step confirmation (removes transcript + runtime sidecars + history entries)
-- **Bilingual UI** — toggles between 中文 and English
+- **Bilingual UI** — toggles between Chinese and English
 
 ## Usage
 

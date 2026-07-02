@@ -1,38 +1,38 @@
-# NVIDIA 驱动与 CUDA
+# NVIDIA driver and CUDA
 
-本目录是独立的 NVIDIA 安装模块，主入口仍通过仓库根 `manage.sh` 调用。
+This directory is the standalone NVIDIA installation module; the main entry point is still the repo-root `manage.sh`.
 
 ```bash
 bash ~/my-linux-setup/manage.sh driver nvidia --check
 bash ~/my-linux-setup/manage.sh driver nvidia --apply
 ```
 
-也可直接运行：
+Or run directly:
 
 ```bash
 bash ~/my-linux-setup/drivers/nvidia/install-nvidia-cuda.sh --check
 bash ~/my-linux-setup/drivers/nvidia/install-nvidia-cuda.sh --apply
 ```
 
-## 模式
+## Modes
 
-| 模式 | 行为 |
+| Mode | Behavior |
 |---|---|
-| `--check` | 探测 NVIDIA 官方元数据，解析可选驱动分支、CUDA 版本、repo/runfile 链接，不改系统 |
-| `.deb` package-managed | 安装指定 `open` 驱动分支；可选择锁定分支；可选安装 `cuda-toolkit-X-Y` |
-| `.run` | 下载 CUDA runfile 并交给 NVIDIA 官方安装器；会走官方交互路径，可能替换现有驱动 |
-| `manual` / `skip` | 打印人工路径或跳过修改 |
+| `--check` | Probes NVIDIA's official metadata, resolves optional driver branches, CUDA versions, repo/runfile links; does not change the system |
+| `.deb` package-managed | Installs the specified `open` driver branch; optionally pins the branch; optionally installs `cuda-toolkit-X-Y` |
+| `.run` | Downloads the CUDA runfile and hands off to NVIDIA's official installer; follows the official interactive path and may replace the existing driver |
+| `manual` / `skip` | Prints the manual path or skips changes |
 
-## 关键策略
+## Key strategy
 
-- 驱动分支可选明确分支或 `latest`；`latest` 使用当前最高兼容 open 分支且不锁定。
-- CUDA 可选 `latest`、明确版本、`decide later`；`decide later` 只用于 `.deb` / `manual` 路径。
-- 先选驱动分支时，脚本会反向解析该分支兼容的 CUDA 版本。
-- `.run` 路径会在图形会话中拒绝执行；Secure Boot 启用时拒绝执行；发现 APT 管理的 NVIDIA/CUDA 包时需要明确确认清理。
-- `--yes` 使用保守默认：不自动锁定驱动分支，不在不受支持的发行版上自动启用 CUDA repo override。
-- `stage2` 不再内置发行版特例；NVIDIA 细节交给本安装器探测和交互/脚本参数决定。
+- The driver branch may be a specific branch or `latest`; `latest` uses the highest compatible open branch and does not pin.
+- CUDA may be `latest`, a specific version, or `decide later`; `decide later` is only valid for the `.deb` / `manual` paths.
+- When a driver branch is chosen first, the script reverse-resolves the CUDA versions compatible with that branch.
+- The `.run` path refuses to run inside a graphical session, refuses when Secure Boot is enabled, and requires explicit confirmation to clean up when APT-managed NVIDIA/CUDA packages are detected.
+- `--yes` uses conservative defaults: it does not auto-pin the driver branch and does not auto-enable the CUDA repo override on unsupported distros.
+- `stage2` no longer hardcodes distro special cases; NVIDIA details are left to this installer's probing and interactive/script arguments.
 
-## 脚本化示例
+## Scripted example
 
 ```bash
 bash ~/my-linux-setup/drivers/nvidia/install-nvidia-cuda.sh \
@@ -43,9 +43,9 @@ bash ~/my-linux-setup/drivers/nvidia/install-nvidia-cuda.sh \
   --install-toolkit
 ```
 
-## 文件
+## Files
 
-- `install-nvidia-cuda.sh` — 主安装器
-- `probe_nvidia_metadata.py` — 官方元数据解析
-- `10-nvidia-driver-cuda.original.sh` — 原始命令参考
-- `cuda-keyring_1.1-1_all.deb` — 本地 keyring 包副本
+- `install-nvidia-cuda.sh` — main installer
+- `probe_nvidia_metadata.py` — official metadata parser
+- `10-nvidia-driver-cuda.original.sh` — original command reference
+- `cuda-keyring_1.1-1_all.deb` — local keyring package copy
