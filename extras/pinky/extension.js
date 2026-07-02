@@ -15,7 +15,6 @@ export default class PinkyExtension extends Extension {
     _wm = null;
     _origShouldAnimate = null;
     _wmPrefs = null;
-    _origTitlebarAction = null;
     _titlebarOverridden = false;
 
     // summary renders as the first (bold) line, body on the next line.
@@ -65,19 +64,39 @@ export default class PinkyExtension extends Extension {
         try { win.disconnect(entry.posId); } catch (e) {}
         try { win.disconnect(entry.sizeId); } catch (e) {}
         this._pinned.delete(win);
+        this._syncTitlebarAction();
     }
 
-    _overrideTitlebarAction() {
-        if (this._titlebarOverridden) return;
-        this._origTitlebarAction = this._wmPrefs.get_string(TITLEBAR_ACTION);
-        this._wmPrefs.set_string(TITLEBAR_ACTION, 'none');
-        this._titlebarOverridden = true;
-    }
-
-    _restoreTitlebarAction() {
-        if (!this._titlebarOverridden) return;
-        this._wmPrefs.set_string(TITLEBAR_ACTION, this._origTitlebarAction);
-        this._titlebarOverridden = false;
+    // Reconcile the global titlebar double-click action with the pinned set.
+    // Single source of truth: derived from _pinned.size, called after every
+    // mutation (pin, unpin, unmanaged detach), so the override state can never
+    // desync from the pinned set. On Wayland, window geometry is client-driven
+    // and asynchronous, so once a maximize request reaches mutter the maximized
+    // frame is inevitably painted before any in-signal restore can take effect
+    // (see _restore); disabling the double-click at its gsetting source is the
+    // only way to prevent the flash. org.gnome.desktop.wm.preferences has no
+    // per-window override, so this is necessarily global: while any window is
+    // pinned, double-clicking any titlebar does nothing. The captured original
+    // value and an override-active flag are persisted in the extension's own
+    // settings so a shell crash (which skips disable()) is self-healed on the
+    // next enable() instead of leaving the desktop stuck with the action at
+    // 'none'.
+    _syncTitlebarAction() {
+        const wantOverride = this._pinned.size > 0;
+        if (wantOverride === this._titlebarOverridden)
+            return;
+        if (wantOverride) {
+            this._settings.set_string('orig-titlebar-action',
+                this._wmPrefs.get_string(TITLEBAR_ACTION));
+            this._settings.set_boolean('titlebar-override-active', true);
+            this._wmPrefs.set_string(TITLEBAR_ACTION, 'none');
+            this._titlebarOverridden = true;
+        } else {
+            this._wmPrefs.set_string(TITLEBAR_ACTION,
+                this._settings.get_string('orig-titlebar-action'));
+            this._settings.set_boolean('titlebar-override-active', false);
+            this._titlebarOverridden = false;
+        }
     }
 
     _pin(win) {
@@ -94,23 +113,13 @@ export default class PinkyExtension extends Extension {
         const unmanagedId = win.connect('unmanaged',
             () => this._detach(win));
         this._pinned.set(win, {rect, posId, sizeId, unmanagedId, restoring: false});
-        // First pin: stop GTK/mutter from acting on a titlebar double-click at
-        // the source. On Wayland, window geometry changes are asynchronous
-        // (client-driven via xdg_toplevel configure), so once a maximize request
-        // reaches mutter the maximized frame is inevitably painted before any
-        // restore can take effect. Disabling the double-click action prevents
-        // the request from being issued at all, so no flash. Restored when the
-        // last window is unpinned.
-        if (this._pinned.size === 1)
-            this._overrideTitlebarAction();
+        this._syncTitlebarAction();
         this._notify('PINNED', '📌', win.title);
     }
 
     _unpin(win) {
         if (!this._pinned.has(win)) return;
         this._detach(win);
-        if (this._pinned.size === 0)
-            this._restoreTitlebarAction();
         this._notify('UNPINNED', null, win.title);
     }
 
@@ -134,6 +143,16 @@ export default class PinkyExtension extends Extension {
         this._wm = Main.wm;
         this._wmPrefs = new Gio.Settings({schema_id: WM_PREFS});
 
+        // Self-heal a crashed override. If the shell died while a window was
+        // pinned, disable() never ran, the WM pref is stuck at 'none' in dconf,
+        // and our override-active flag is still set. Restore the captured
+        // original before accepting any new pin.
+        if (this._settings.get_boolean('titlebar-override-active')) {
+            this._wmPrefs.set_string(TITLEBAR_ACTION,
+                this._settings.get_string('orig-titlebar-action'));
+            this._settings.set_boolean('titlebar-override-active', false);
+        }
+
         // Suppress GNOME Shell's crossfade for any size change that does reach a
         // pinned window (see _restore comment). The size/minimize/map/destroy
         // handlers were bound at shell startup as this._sizeChangeWindow.bind(this),
@@ -155,9 +174,9 @@ export default class PinkyExtension extends Extension {
             this._wm._shouldAnimateActor = this._origShouldAnimate;
             this._origShouldAnimate = null;
         }
-        this._restoreTitlebarAction();
+        // _detach reconciles the titlebar action as the set drains, so the last
+        // detached window restores the WM pref and clears the override flag.
         for (const [win] of this._pinned) this._detach(win);
-        this._pinned.clear();
         this._wm = null;
         this._wmPrefs = null;
         this._settings = null;
