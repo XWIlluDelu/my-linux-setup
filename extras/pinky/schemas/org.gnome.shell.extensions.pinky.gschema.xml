@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.pinky"
+          path="/org/gnome/shell/extensions/pinky/">
+    <key name="pin-key" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;p']</default>
+      <summary>Pin window shortcut</summary>
+      <description>Toggles pin on the focused window: it cannot be moved or resized until unpinned.</description>
+    </key>
+    <key name="unpin-all-key" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;u']</default>
+      <summary>Unpin all windows shortcut</summary>
+      <description>Unpins every currently pinned window at once.</description>
+    </key>
+  </schema>
+</schemalist>
