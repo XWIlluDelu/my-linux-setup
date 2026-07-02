@@ -1,28 +1,27 @@
 # pinky
 
-A self-written GNOME Shell extension. A shortcut pins the focused window's position and size; once pinned it cannot be moved or resized until unpinned. Notifications show `PINNED 📌` / `UNPINNED`.
+A GNOME Shell extension. A shortcut pins the focused window's position and size; once pinned it cannot be moved, resized, maximized, or fullscreened until unpinned. Notifications show `PINNED 📌` / `UNPINNED`.
 
 ## Scope
 
-- Pins only window geometry (position + size); does not keep above and does not block close
-- Default shortcut `Super+Shift+P`, changeable under GNOME Settings → Keyboard → Custom Shortcuts
-- Targets the GNOME 45+ class-based extension model; tested on GNOME 50.2 / Wayland / mutter 18
+- Pins only window geometry (position + size) and blocks maximize/fullscreen transitions on the pinned window; does not keep above and does not block close
+- Default shortcut `Super+Shift+P` to toggle pin on the focused window, `Super+Shift+U` to unpin all at once; both changeable under GNOME Settings → Keyboard → Custom Shortcuts
+- A hollow frame around each pinned window marks it persistently; the frame color follows the GNOME desktop accent color (GNOME 47+) and updates live when the accent changes
+- Targets the GNOME 50 class-based extension model; tested on GNOME 50.2 / Wayland / mutter 18
 
 ## How it works
 
-`end_grab_op` is not introspectable on this machine's mutter, so a grab cannot be cancelled synchronously when dragging starts. Instead, at pin time the window geometry is snapshotted and `Meta.Window`'s `position-changed` / `size-changed` are monitored; once the position changes, `move_resize_frame` restores the original rectangle synchronously inside the signal callback, before the compositor paints the next frame, so no displacement is visible. A `restoring` flag breaks the recursion that `move_resize_frame` would otherwise retrigger.
+At pin time the window's frame rect is snapshotted and five `Meta.Window` signals are connected: `position-changed`, `size-changed`, `notify::maximized-horizontally`, `notify::maximized-vertically`, and `notify::fullscreen`. When any fires, `_restore` clears the maximize/fullscreen flags with `unmaximize` / `unmake_fullscreen` and calls `move_resize_frame` to put the window back at the pinned rect. A `restoring` flag breaks the recursion that `move_resize_frame` would otherwise retrigger.
 
-Maximize and fullscreen set state flags that override geometry (e.g. double-clicking the titlebar toggles maximize), so before restoring they are cleared with `unmaximize` / `unmake_fullscreen`.
+The key timing insight: `notify::maximized-horizontally` and `notify::maximized-vertically` fire when the maximize **state flags** flip, which is *before* mutter commits the maximized geometry. `_restore` running in that handler cancels the transition synchronously, so the maximized frame is never painted and there is no flash. This is per-window — only the pinned window is affected; other windows maximize and double-click normally. An earlier attempt used `size-changed` alone, but that signal fires *after* the geometry is committed, so on Wayland (where geometry changes are client-driven and asynchronous) the maximized frame was inevitably painted for at least one frame before any restore could take effect.
 
-On Wayland, window geometry changes are client-driven and asynchronous: `move_resize_frame` only sends an `xdg_toplevel` configure request and returns immediately, so the client acks and resizes on a later frame. This means any maximize request that reaches mutter is inevitably painted for at least one frame before an in-signal `move_resize_frame` restore can take effect — the `_restore` path above cannot prevent that flash by construction. It is retained only as a fallback so the window returns to its pinned rect after a maximize that enters through a path other than titlebar double-click (the maximize keybinding, the headerbar button).
+`position-changed` and `size-changed` are kept as a fallback for move and resize grabs, where the geometry does change before the signal fires and `_restore` snaps the window back to the pinned rect.
 
-The reported flash is the titlebar double-click. GTK headerbars read `org.gnome.desktop.wm.preferences::action-double-click-titlebar` (mapped to `gtk-titlebar-double-click`) to decide what a double-click does, and GSettings changes propagate live to every client via dconf. So the extension sets that key to `none` while any window is pinned and restores the original value (default `toggle-maximize`) when the last window is unpinned. The maximize request is then never issued, so no maximized frame is ever painted. The tradeoff: while any window is pinned, double-clicking any window's titlebar does nothing — acceptable in a pin context and fully reversed on unpin.
+For size changes that do reach a pinned window through a path the notify:: signals don't catch early enough, GNOME Shell's crossfade animation is also suppressed. The extension uses the official `InjectionManager` (GNOME Shell 44+) to override `WindowManager.prototype._shouldAnimateActor`, returning `false` for a pinned window so no animation info is prepared. `InjectionManager` keeps a stack of overrides, so the patch coexists with other extensions overriding the same method and restores cleanly on disable, instead of clobbering an instance property by hand. Non-pinned windows fall through to the original gate unchanged.
 
-The override is reconciled from the pinned set as a single source of truth: every mutation (pin, unpin, and the `unmanaged` signal fired when a pinned window is closed) runs the same reconciliation, so the global action is restored the moment the pinned set becomes empty — including when the last pinned window is closed rather than explicitly unpinned. The captured original value and an override-active flag are persisted in the extension's own settings, so if the shell crashes while a window is pinned (which skips `disable()` and would otherwise leave the desktop stuck with the action at `none`), the next `enable()` restores the captured original before accepting any new pin.
+A persistent hollow frame marks each pinned window. It is a non-reactive `St.Widget` added as a child of the window's own `MetaWindowActor`, so it stacks, hides, and is destroyed together with the window — mutter restacks only window actors, so a sibling in `global.window_group` would get thrown above other windows on focus changes, but a child moves with its parent and stays correctly ordered. The frame is positioned just outside the window's frame rect (child coordinates are relative to the actor origin, the buffer rect including the client shadow margin). Only a 2px border is drawn; no `box-shadow`, because St renders box-shadow on large actors by 9-slice stretching a small blurred texture, which fills a hollow interior with a translucent tint. The border color is read from `org.gnome.desktop.interface::accent-color` (GNOME 47+) and updated live when the desktop accent changes.
 
-For size changes that do reach a pinned window through other paths, GNOME Shell's crossfade is also suppressed. `windowManager.js` binds `this._sizeChangeWindow.bind(this)` at startup, so replacing that method name has no effect, but the bound body looks up `this._shouldAnimateActor` dynamically on every call; the extension overrides that instance property to return `false` for a pinned window, so `_sizeChangeWindow` takes the `completed_size_change` branch and prepares no animation info. Non-pinned windows fall through to the original gate unchanged.
-
-`set_maximizeable` does not exist on `Meta.Window`, so a window cannot be made un-maximizeable at the capability level; the gsetting toggle is the only per-session way to prevent the double-click maximize at its source. Tested on GNOME 50 / Wayland.
+`set_maximizeable` does not exist on `Meta.Window`, so a window cannot be made un-maximizeable at the capability level; the notify:: signal interception is the per-window mechanism. Tested on GNOME 50 / Wayland.
 
 ## Installation
 
@@ -37,10 +36,8 @@ On Wayland, GNOME Shell scans the extensions directory only at startup and canno
 
 ## Usage
 
-Focus the target window and press `Super+Shift+P`:
-
-- Pin: notification shows `PINNED 📌` with the window title on the second line; the window cannot be moved or resized
-- Unpin: press again; notification shows `UNPINNED`
+- `Super+Shift+P` on the focused window toggles pin: notification shows `PINNED 📌` with the window title on the second line; a hollow frame appears around it; the window cannot be moved, resized, maximized, or fullscreened
+- `Super+Shift+U` unpins every pinned window at once: notification shows `UNPINNED ALL` with the count
 
 ## Verification
 
@@ -48,10 +45,10 @@ Focus the target window and press `Super+Shift+P`:
 gnome-extensions info pinky@local | grep -E "Enabled|State"
 ```
 
-Expect `State: ACTIVE`. After pinning, dragging the window should not move it; after unpinning it behaves normally again.
+Expect `State: ACTIVE`. After pinning, dragging the window should not move it; double-clicking its titlebar should not maximize it; other windows behave normally.
 
 ## Limitations
 
-- Does not block the ❌ close button or `Alt+F4`; GNOME CSD title bars are drawn by the application and cannot be intercepted generically by a Shell extension
-- Minimize, maximize (as a deliberate action), and move-to-workspace are not constrained by the pin
+- Does not block the close button or `Alt+F4`; GNOME CSD title bars are drawn by the application and cannot be intercepted generically by a Shell extension
+- Minimize and move-to-workspace are not constrained by the pin
 - The pinned geometry is the one captured at pin time; after unpin the window is freely movable again

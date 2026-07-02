@@ -2,134 +2,127 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
-import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import St from 'gi://St';
+import {Extension, InjectionManager} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const PIN_KEY = 'pin-key';
-const WM_PREFS = 'org.gnome.desktop.wm.preferences';
-const TITLEBAR_ACTION = 'action-double-click-titlebar';
+const UNPIN_ALL_KEY = 'unpin-all-key';
+const BORDER = 2;
+
+// org.gnome.desktop.interface::accent-color is an enum with no color values
+// attached; these are the RGB values GNOME itself renders for each entry.
+const ACCENT_RGB = {
+    blue:   [53, 132, 228],
+    teal:   [26, 162, 178],
+    green:  [38, 162, 105],
+    yellow: [226, 167, 11],
+    orange: [196, 92, 22],
+    red:    [224, 27, 36],
+    pink:   [222, 72, 161],
+    purple: [151, 77, 255],
+    slate:  [98, 106, 127],
+};
 
 export default class PinkyExtension extends Extension {
     _settings = null;
-    // Meta.Window -> { rect, posId, sizeId, unmanagedId, restoring }
+    // Meta.Window -> {rect, winIds, actor, frame, restoring}
     _pinned = new Map();
-    _wm = null;
-    _origShouldAnimate = null;
-    _wmPrefs = null;
-    _titlebarOverridden = false;
+    _injectionManager = null;
+    _ifacePrefs = null;
+    _accentId = 0;
+    _accentCss = '';
 
-    // summary renders as the first (bold) line, body on the next line.
-    _notify(label, emoji, title) {
-        const summary = emoji ? `${label} ${emoji}` : label;
-        if (title)
-            Main.notify(summary, title);
-        else
-            Main.notify(summary);
+    _loadAccent() {
+        const rgb = ACCENT_RGB[this._ifacePrefs.get_string('accent-color')] ?? ACCENT_RGB.blue;
+        this._accentCss = `border: ${BORDER}px solid rgb(${rgb.join(',')});`;
     }
 
-    _snapshot(win) {
-        const r = win.get_frame_rect();
-        return {x: r.x, y: r.y, w: r.width, h: r.height};
-    }
-
-    // Restore the pinned geometry synchronously, inside the position/size-changed
-    // signal. On Wayland window geometry is client-driven and asynchronous, so
-    // this cannot prevent a maximize frame from being painted (the configure we
-    // issue here takes effect only after the client acks). It is kept as a
-    // fallback so the window returns to its pinned rect after any maximize that
-    // reaches mutter through a path other than titlebar double-click (e.g. the
-    // maximize keybinding or headerbar button). The restoring guard breaks the
-    // recursion that move_resize_frame would otherwise retrigger.
+    // Restore the pinned geometry. The notify::maximized-*/fullscreen property
+    // signals fire when the state flags flip but BEFORE mutter commits the new
+    // geometry, so unmaximize + move_resize_frame here cancels the transition
+    // before any maximized frame is painted; position-changed/size-changed
+    // catch plain move/resize grabs. The restoring guard breaks the recursion
+    // those signals would otherwise retrigger through move_resize_frame.
     _restore(win, entry) {
         if (entry.restoring) return;
         entry.restoring = true;
         try {
-            const max = win.get_maximize_flags();
-            if (max !== 0)
-                win.unmaximize(max);
+            if (win.get_maximize_flags() !== 0)
+                win.unmaximize();
             if (win.is_fullscreen())
                 win.unmake_fullscreen();
             win.move_resize_frame(false,
                 entry.rect.x, entry.rect.y, entry.rect.w, entry.rect.h);
-        } catch (e) {
-            logError(e);
         } finally {
             entry.restoring = false;
         }
+        this._syncFrame(entry);
+    }
+
+    // Child coordinates are relative to the actor origin, which is the buffer
+    // rect (frame rect plus the client shadow margin), not the frame rect.
+    _syncFrame(entry) {
+        const {rect, actor, frame} = entry;
+        frame.set_position(rect.x - actor.x - BORDER, rect.y - actor.y - BORDER);
+        frame.set_size(rect.w + 2 * BORDER, rect.h + 2 * BORDER);
     }
 
     _detach(win) {
         const entry = this._pinned.get(win);
         if (!entry) return;
-        try { win.disconnect(entry.unmanagedId); } catch (e) {}
-        try { win.disconnect(entry.posId); } catch (e) {}
-        try { win.disconnect(entry.sizeId); } catch (e) {}
+        for (const id of entry.winIds)
+            win.disconnect(id);
+        entry.frame.destroy();
         this._pinned.delete(win);
-        this._syncTitlebarAction();
-    }
-
-    // Reconcile the global titlebar double-click action with the pinned set.
-    // Single source of truth: derived from _pinned.size, called after every
-    // mutation (pin, unpin, unmanaged detach), so the override state can never
-    // desync from the pinned set. On Wayland, window geometry is client-driven
-    // and asynchronous, so once a maximize request reaches mutter the maximized
-    // frame is inevitably painted before any in-signal restore can take effect
-    // (see _restore); disabling the double-click at its gsetting source is the
-    // only way to prevent the flash. org.gnome.desktop.wm.preferences has no
-    // per-window override, so this is necessarily global: while any window is
-    // pinned, double-clicking any titlebar does nothing. The captured original
-    // value and an override-active flag are persisted in the extension's own
-    // settings so a shell crash (which skips disable()) is self-healed on the
-    // next enable() instead of leaving the desktop stuck with the action at
-    // 'none'.
-    _syncTitlebarAction() {
-        const wantOverride = this._pinned.size > 0;
-        if (wantOverride === this._titlebarOverridden)
-            return;
-        if (wantOverride) {
-            this._settings.set_string('orig-titlebar-action',
-                this._wmPrefs.get_string(TITLEBAR_ACTION));
-            this._settings.set_boolean('titlebar-override-active', true);
-            this._wmPrefs.set_string(TITLEBAR_ACTION, 'none');
-            this._titlebarOverridden = true;
-        } else {
-            this._wmPrefs.set_string(TITLEBAR_ACTION,
-                this._settings.get_string('orig-titlebar-action'));
-            this._settings.set_boolean('titlebar-override-active', false);
-            this._titlebarOverridden = false;
-        }
     }
 
     _pin(win) {
-        if (this._pinned.has(win)) return;
-        const rect = this._snapshot(win);
-        const posId = win.connect('position-changed', () => {
-            const e = this._pinned.get(win);
-            if (e) this._restore(win, e);
-        });
-        const sizeId = win.connect('size-changed', () => {
-            const e = this._pinned.get(win);
-            if (e) this._restore(win, e);
-        });
-        const unmanagedId = win.connect('unmanaged',
-            () => this._detach(win));
-        this._pinned.set(win, {rect, posId, sizeId, unmanagedId, restoring: false});
-        this._syncTitlebarAction();
-        this._notify('PINNED', '📌', win.title);
-    }
-
-    _unpin(win) {
-        if (!this._pinned.has(win)) return;
-        this._detach(win);
-        this._notify('UNPINNED', null, win.title);
+        const r = win.get_frame_rect();
+        // Pin indicator: a hollow 2px accent-colored ring just outside the
+        // frame rect. It is a child of the window actor so it stacks, hides,
+        // and dies with the window; a sibling in window_group gets thrown
+        // above other windows whenever mutter restacks, because mutter
+        // restacks only the MetaWindowActors. Border only — St renders
+        // box-shadow on large actors by 9-slice stretching a small blurred
+        // texture, which fills a hollow interior with a translucent tint.
+        const entry = {
+            rect: {x: r.x, y: r.y, w: r.width, h: r.height},
+            actor: win.get_compositor_private(),
+            frame: new St.Widget({style: this._accentCss, reactive: false}),
+            restoring: false,
+        };
+        const onGeom = () => this._restore(win, entry);
+        entry.winIds = [
+            win.connect('position-changed', onGeom),
+            win.connect('size-changed', onGeom),
+            win.connect('notify::maximized-horizontally', onGeom),
+            win.connect('notify::maximized-vertically', onGeom),
+            win.connect('notify::fullscreen', onGeom),
+            win.connect('unmanaged', () => this._detach(win)),
+        ];
+        entry.actor.add_child(entry.frame);
+        this._pinned.set(win, entry);
+        this._syncFrame(entry);
+        Main.notify('PINNED 📌', win.title);
     }
 
     _toggle() {
         const win = global.display.focus_window;
         if (!win) return;
-        if (this._pinned.has(win))
-            this._unpin(win);
-        else
+        if (this._pinned.has(win)) {
+            this._detach(win);
+            Main.notify('UNPINNED', win.title);
+        } else {
             this._pin(win);
+        }
+    }
+
+    _unpinAll() {
+        const count = this._pinned.size;
+        if (count === 0) return;
+        for (const win of [...this._pinned.keys()])
+            this._detach(win);
+        Main.notify('UNPINNED ALL', `${count} window${count > 1 ? 's' : ''}`);
     }
 
     enable() {
@@ -137,48 +130,46 @@ export default class PinkyExtension extends Extension {
         Main.wm.addKeybinding(
             PIN_KEY, this._settings,
             Meta.KeyBindingFlags.NONE, Shell.ActionMode.NORMAL,
-            () => this._toggle()
-        );
+            () => this._toggle());
+        Main.wm.addKeybinding(
+            UNPIN_ALL_KEY, this._settings,
+            Meta.KeyBindingFlags.NONE, Shell.ActionMode.NORMAL,
+            () => this._unpinAll());
 
-        this._wm = Main.wm;
-        this._wmPrefs = new Gio.Settings({schema_id: WM_PREFS});
+        // Accent color follows the desktop setting and updates live.
+        this._ifacePrefs = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
+        this._loadAccent();
+        this._accentId = this._ifacePrefs.connect('changed::accent-color', () => {
+            this._loadAccent();
+            for (const entry of this._pinned.values())
+                entry.frame.style = this._accentCss;
+        });
 
-        // Self-heal a crashed override. If the shell died while a window was
-        // pinned, disable() never ran, the WM pref is stuck at 'none' in dconf,
-        // and our override-active flag is still set. Restore the captured
-        // original before accepting any new pin.
-        if (this._settings.get_boolean('titlebar-override-active')) {
-            this._wmPrefs.set_string(TITLEBAR_ACTION,
-                this._settings.get_string('orig-titlebar-action'));
-            this._settings.set_boolean('titlebar-override-active', false);
-        }
-
-        // Suppress GNOME Shell's crossfade for any size change that does reach a
-        // pinned window (see _restore comment). The size/minimize/map/destroy
-        // handlers were bound at shell startup as this._sizeChangeWindow.bind(this),
-        // so replacing that method name has no effect; but the bound body looks up
-        // this._shouldAnimateActor dynamically on every call, so an instance-level
-        // override is seen. For a pinned window, return false.
-        this._origShouldAnimate = this._wm._shouldAnimateActor;
-        const self = this;
-        this._wm._shouldAnimateActor = function(actor, types) {
-            if (actor && actor.meta_window && self._pinned.has(actor.meta_window))
-                return false;
-            return self._origShouldAnimate.apply(self._wm, arguments);
-        };
+        // Suppress GNOME Shell's crossfade for any size change that reaches a
+        // pinned window through a path the notify:: signals don't catch early
+        // enough. InjectionManager stacks correctly with other extensions
+        // overriding the same method and restores cleanly on disable.
+        this._injectionManager = new InjectionManager();
+        const pinned = this._pinned;
+        this._injectionManager.overrideMethod(
+            Object.getPrototypeOf(Main.wm), '_shouldAnimateActor',
+            originalMethod => function (actor, types) {
+                if (actor?.meta_window && pinned.has(actor.meta_window))
+                    return false;
+                return originalMethod.call(this, actor, types);
+            });
     }
 
     disable() {
         Main.wm.removeKeybinding(PIN_KEY);
-        if (this._origShouldAnimate) {
-            this._wm._shouldAnimateActor = this._origShouldAnimate;
-            this._origShouldAnimate = null;
-        }
-        // _detach reconciles the titlebar action as the set drains, so the last
-        // detached window restores the WM pref and clears the override flag.
-        for (const [win] of this._pinned) this._detach(win);
-        this._wm = null;
-        this._wmPrefs = null;
+        Main.wm.removeKeybinding(UNPIN_ALL_KEY);
+        this._injectionManager.clear();
+        this._injectionManager = null;
+        this._ifacePrefs.disconnect(this._accentId);
+        this._accentId = 0;
+        this._ifacePrefs = null;
+        for (const win of [...this._pinned.keys()])
+            this._detach(win);
         this._settings = null;
     }
 }

@@ -7,15 +7,10 @@
       <summary>Pin window shortcut</summary>
       <description>Toggles pin on the focused window: it cannot be moved or resized until unpinned.</description>
     </key>
-    <key name="titlebar-override-active" type="b">
-      <default>false</default>
-      <summary>Whether pinky is currently overriding the titlebar double-click action</summary>
-      <description>Persisted so the extension can self-heal if the shell crashes while a window is pinned; without this the global action-double-click-titlebar would be left stuck at 'none' after a crash.</description>
-    </key>
-    <key name="orig-titlebar-action" type="s">
-      <default>'toggle-maximize'</default>
-      <summary>Captured original titlebar double-click action</summary>
-      <description>The value of org.gnome.desktop.wm.preferences::action-double-click-titlebar captured before pinky set it to 'none'.</description>
+    <key name="unpin-all-key" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;u']</default>
+      <summary>Unpin all windows shortcut</summary>
+      <description>Unpins every currently pinned window at once.</description>
     </key>
   </schema>
 </schemalist>

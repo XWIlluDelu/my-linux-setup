@@ -2,7 +2,7 @@
   "uuid": "pinky@local",
   "name": "Pinky",
   "description": "Pin the focused window so it cannot be moved or resized until unpinned.",
-  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "shell-version": ["50"],
   "settings-schema": "org.gnome.shell.extensions.pinky",
-  "version": 1
+  "version": 3
 }
