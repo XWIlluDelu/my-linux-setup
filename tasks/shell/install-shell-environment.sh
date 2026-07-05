@@ -190,7 +190,8 @@ clean_shell_env_user_state() {
     "$state_file" \
     "$marker_file"
   run_as_target_user "$target_user" "$target_home" rm -rf \
-    "$target_home/.local/share/zinit"
+    "$target_home/.local/share/zinit" \
+    "$target_home/.config/shell"
   run_as_target_user "$target_user" "$target_home" mkdir -p \
     "$target_home/.config" \
     "$target_home/.local/bin" \
@@ -211,32 +212,20 @@ remove_legacy_managed_tmux_config() {
 }
 
 apply_shell_assets() {
-  local target_user target_home zsh_source bash_source profile_source marker_path state_dir state_file timestamp
+  local target_user target_home profile_source marker_path state_dir state_file timestamp
   target_user="$1"
   target_home="$2"
-
-  case "$PROFILE" in
-    desktop)
-      bash_source="$ASSET_DIR/bashrc.desktop"
-      zsh_source="$ASSET_DIR/zshrc.desktop"
-      ;;
-    server)
-      bash_source="$ASSET_DIR/bashrc.server"
-      zsh_source="$ASSET_DIR/zshrc.server"
-      ;;
-    *)
-      die "Unsupported shell profile: $PROFILE"
-      ;;
-  esac
   profile_source="$ASSET_DIR/profile"
 
-  run_as_target_user "$target_user" "$target_home" mkdir -p "$target_home/.config"
+  run_as_target_user "$target_user" "$target_home" mkdir -p "$target_home/.config/shell"
   state_dir="$(linux_setup_state_dir_for_home "$target_home")"
   state_file="$(shell_env_state_file_for_home "$target_home")"
   run_as_target_user "$target_user" "$target_home" mkdir -p "$state_dir"
   run_as_target_user "$target_user" "$target_home" install -m 644 "$profile_source" "$target_home/.profile"
-  run_as_target_user "$target_user" "$target_home" install -m 644 "$bash_source" "$target_home/.bashrc"
-  run_as_target_user "$target_user" "$target_home" install -m 644 "$zsh_source" "$target_home/.zshrc"
+  run_as_target_user "$target_user" "$target_home" install -m 644 "$ASSET_DIR/bashrc" "$target_home/.bashrc"
+  run_as_target_user "$target_user" "$target_home" install -m 644 "$ASSET_DIR/zshrc" "$target_home/.zshrc"
+  run_as_target_user "$target_user" "$target_home" install -m 644 "$ASSET_DIR/env.sh" "$target_home/.config/shell/env.sh"
+  run_as_target_user "$target_user" "$target_home" install -m 644 "$ASSET_DIR/aliases.sh" "$target_home/.config/shell/aliases.sh"
   run_as_target_user "$target_user" "$target_home" install -m 644 "$ASSET_DIR/starship.toml" "$target_home/.config/starship.toml"
   remove_legacy_managed_tmux_config "$target_user" "$target_home"
   timestamp="$(date +%Y-%m-%dT%H:%M:%S%:z)"
@@ -346,7 +335,7 @@ if [[ "$APPLY" -ne 1 ]]; then
     cat <<EOF
 This was a check run. The script would:
   1. Skip package installation, starship/zinit refresh, and default-shell changes
-  2. Rewrite managed ~/.profile, ${PROFILE}-specific ~/.bashrc and ~/.zshrc, ~/.config/starship.toml, and shell state markers in ${TARGET_HOME}
+  2. Rewrite managed ~/.profile, ~/.bashrc, ~/.zshrc, ~/.config/shell/{env,aliases}.sh, ~/.config/starship.toml, and shell state markers in ${TARGET_HOME}
   3. Preserve the existing starship binary and zinit checkout
 
 Run with --apply to execute.
@@ -358,7 +347,7 @@ This was a check run. The script would:
   2. Remove existing managed shell config files and user-space shell components in ${TARGET_HOME}
   3. Reinstall starship in ${TARGET_HOME}/.local/bin
   4. Reinstall zinit in ${TARGET_HOME}/.local/share/zinit/zinit.git
-  5. Write managed ~/.profile, ${PROFILE}-specific ~/.bashrc and ~/.zshrc, ~/.config/starship.toml, and shell state markers
+  5. Write managed ~/.profile, ~/.bashrc, ~/.zshrc, ~/.config/shell/{env,aliases}.sh, ~/.config/starship.toml, and shell state markers
   6. $( [[ "$UPDATE_ONLY" -eq 1 ]] && printf 'Skip default-shell changes for %s' "$TARGET_USER" || printf 'Try to switch the default shell for %s to zsh' "$TARGET_USER" )
   7. Preload zsh plugins for the target user
 

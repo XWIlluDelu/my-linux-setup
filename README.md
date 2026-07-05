@@ -104,6 +104,8 @@ Managed files:
 - `~/.profile`
 - `~/.bashrc`
 - `~/.zshrc`
+- `~/.config/shell/env.sh`
+- `~/.config/shell/aliases.sh`
 - `~/.config/starship.toml`
 
 Rewrite only these files:

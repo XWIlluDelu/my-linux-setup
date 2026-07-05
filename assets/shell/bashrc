@@ -1,0 +1,36 @@
+# bash interactive config.
+
+case $- in
+  *i*) ;;
+  *) return ;;
+esac
+
+if [ -f /etc/bash.bashrc ]; then
+  . /etc/bash.bashrc
+fi
+
+source "$HOME/.config/shell/env.sh"
+
+HISTFILE="$HOME/.bash_history"
+HISTSIZE=50000
+HISTFILESIZE=50000
+HISTCONTROL=ignoreboth:erasedups
+shopt -s histappend
+
+# Sync history across terminals, matching the zsh SHARE_HISTORY behaviour.
+__history_sync() {
+  history -a
+  history -n
+}
+PROMPT_COMMAND="__history_sync${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+export PROMPT_COMMAND
+
+source "$HOME/.config/shell/aliases.sh"
+
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+  . /usr/share/bash-completion/bash_completion
+fi
+
+if command -v direnv >/dev/null 2>&1; then
+  eval "$(direnv hook bash)"
+fi
