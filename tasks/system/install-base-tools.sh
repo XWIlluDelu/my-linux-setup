@@ -37,7 +37,6 @@ base_tool_packages() {
         ripgrep \
         fd-find \
         direnv \
-        uv \
         tree \
         unzip \
         zip \
@@ -60,7 +59,6 @@ base_tool_packages() {
         ripgrep \
         fd-find \
         direnv \
-        uv \
         tree \
         unzip \
         zip \
@@ -83,7 +81,6 @@ base_tool_packages() {
         ripgrep \
         fd \
         direnv \
-        uv \
         tree \
         unzip \
         zip \
@@ -105,7 +102,6 @@ base_tool_packages() {
         ripgrep \
         fd \
         direnv \
-        uv \
         tree \
         unzip \
         zip \
