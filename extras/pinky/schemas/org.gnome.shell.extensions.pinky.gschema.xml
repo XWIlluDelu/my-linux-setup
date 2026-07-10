@@ -7,6 +7,11 @@
       <summary>Pin window shortcut</summary>
       <description>Toggles pin on the focused window: it cannot be moved or resized until unpinned.</description>
     </key>
+    <key name="above-key" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;t']</default>
+      <summary>Always-on-top shortcut</summary>
+      <description>Toggles always-on-top on the focused window.</description>
+    </key>
     <key name="unpin-all-key" type="as">
       <default>['&lt;Super&gt;&lt;Shift&gt;u']</default>
       <summary>Unpin all windows shortcut</summary>
