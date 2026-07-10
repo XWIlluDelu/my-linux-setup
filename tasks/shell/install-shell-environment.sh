@@ -83,9 +83,6 @@ shell_package_candidates() {
     direnv:apt-get|direnv:dnf|direnv:zypper|direnv:pacman)
       printf '%s\n' direnv
       ;;
-    uv:apt-get|uv:dnf|uv:zypper|uv:pacman)
-      printf '%s\n' uv
-      ;;
     trash-cli:apt-get|trash-cli:dnf|trash-cli:zypper|trash-cli:pacman)
       printf '%s\n' trash-cli
       ;;
@@ -118,7 +115,7 @@ install_shell_packages() {
   [[ -n "$PKG_MANAGER" ]] || die "No supported package manager detected. Supported: apt, dnf, zypper, pacman."
 
   packages=(zsh tmux)
-  modern_tool_keys=(eza ripgrep bat fd fzf direnv uv trash-cli)
+  modern_tool_keys=(eza ripgrep bat fd fzf direnv trash-cli)
 
   for tool_key in "${modern_tool_keys[@]}"; do
     if resolved_package="$(resolve_shell_package "$tool_key")"; then
@@ -170,6 +167,25 @@ install_starship() {
   chmod 644 "$script_path"
   run_as_target_user "$target_user" "$target_home" mkdir -p "$target_home/.local/bin"
   run_as_target_user "$target_user" "$target_home" sh "$script_path" -y -b "$target_home/.local/bin"
+}
+
+install_uv() {
+  local target_user target_home script_path uv_path
+  target_user="$1"
+  target_home="$2"
+  uv_path="$target_home/.local/bin/uv"
+  script_path="$TMP_DIR/uv-install.sh"
+
+  if [[ -x "$uv_path" ]]; then
+    info "[shell] Update uv"
+    run_as_target_user "$target_user" "$target_home" env UV_NO_MODIFY_PATH=1 "$uv_path" self update
+    return 0
+  fi
+
+  info "[shell] Install uv with Astral's standalone installer"
+  download_url_with_speed_guard "https://astral.sh/uv/install.sh" "$script_path"
+  chmod 644 "$script_path"
+  run_as_target_user "$target_user" "$target_home" env UV_NO_MODIFY_PATH=1 sh "$script_path"
 }
 
 clean_shell_env_user_state() {
@@ -340,16 +356,24 @@ This was a check run. The script would:
 
 Run with --apply to execute.
 EOF
+  elif [[ "$UPDATE_ONLY" -eq 1 ]]; then
+    cat <<EOF
+This was a check run. The script would:
+  1. Ensure shell packages are updated via $(shell_pkg_manager_label)
+  2. Update starship, uv, and zinit
+  3. Preserve managed shell files and the default shell for ${TARGET_USER}
+
+Run with --apply to execute.
+EOF
   else
     cat <<EOF
 This was a check run. The script would:
   1. Ensure shell packages are installed via $(shell_pkg_manager_label)
   2. Remove existing managed shell config files and user-space shell components in ${TARGET_HOME}
-  3. Reinstall starship in ${TARGET_HOME}/.local/bin
-  4. Reinstall zinit in ${TARGET_HOME}/.local/share/zinit/zinit.git
-  5. Write managed ~/.profile, ~/.bashrc, ~/.zshrc, ~/.config/shell/{env,aliases}.sh, ~/.config/starship.toml, and shell state markers
-  6. $( [[ "$UPDATE_ONLY" -eq 1 ]] && printf 'Skip default-shell changes for %s' "$TARGET_USER" || printf 'Try to switch the default shell for %s to zsh' "$TARGET_USER" )
-  7. Preload zsh plugins for the target user
+  3. Reinstall starship, uv, and zinit
+  4. Write managed ~/.profile, ~/.bashrc, ~/.zshrc, ~/.config/shell/{env,aliases}.sh, ~/.config/starship.toml, and shell state markers
+  5. Try to switch the default shell for ${TARGET_USER} to zsh
+  6. Preload zsh plugins for the target user
 
 Run with --apply to execute.
 EOF
@@ -381,11 +405,14 @@ chmod 755 "$TMP_DIR"
 ensure_sudo_session
 install_shell_packages
 
-clean_shell_env_user_state "$TARGET_USER" "$TARGET_HOME"
-install_starship "$TARGET_USER" "$TARGET_HOME"
-ensure_zinit_repo "$TARGET_USER" "$TARGET_HOME"
-apply_shell_assets "$TARGET_USER" "$TARGET_HOME"
 if [[ "$UPDATE_ONLY" -ne 1 ]]; then
-  change_default_shell_to_zsh "$TARGET_USER"
+  clean_shell_env_user_state "$TARGET_USER" "$TARGET_HOME"
 fi
-preload_zsh_plugins "$TARGET_USER" "$TARGET_HOME"
+install_starship "$TARGET_USER" "$TARGET_HOME"
+install_uv "$TARGET_USER" "$TARGET_HOME"
+ensure_zinit_repo "$TARGET_USER" "$TARGET_HOME"
+if [[ "$UPDATE_ONLY" -ne 1 ]]; then
+  apply_shell_assets "$TARGET_USER" "$TARGET_HOME"
+  change_default_shell_to_zsh "$TARGET_USER"
+  preload_zsh_plugins "$TARGET_USER" "$TARGET_HOME"
+fi
