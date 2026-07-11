@@ -13,7 +13,7 @@ usage() {
 Update distro packages through the system package manager.
 
 Usage:
-  update-packages.sh [--check] [--apply]
+  manage.sh update packages [--check] [--apply]
 
 Steps:
   1. Run the reusable system package upgrade task
@@ -21,7 +21,7 @@ Steps:
 Notes:
   - Default mode is --check.
   - This is the normal distro package upgrade step.
-  - For the full routine pass, use update-all.sh.
+  - For the full routine pass, use `manage.sh update`.
 EOF
 }
 

@@ -86,21 +86,65 @@ case "$ROOT_SUBVOL_PATH" in
     ;;
 esac
 
+require_layout_capacity() {
+  local available_kib copied_kib required_kib
+
+  available_kib="$(df -Pk / | awk 'NR == 2 {print $4}')"
+  [[ "$available_kib" =~ ^[0-9]+$ ]] || die "Could not determine free space for the Btrfs layout conversion."
+
+  if [[ "$MODE" == "flat-root-to-rootfs-home" ]]; then
+    copied_kib="$(as_root du -skx / | awk 'END {print $1}')"
+    [[ "$copied_kib" =~ ^[0-9]+$ ]] || die "Could not determine the root data size for the Btrfs layout conversion."
+    required_kib="$(btrfs_layout_required_kib "$MODE" "$copied_kib")"
+    info "Layout conversion needs up to ${required_kib} KiB free for the safety copy and new root/home subvolumes."
+  else
+    copied_kib="$(as_root du -skx /home | awk 'END {print $1}')"
+    [[ "$copied_kib" =~ ^[0-9]+$ ]] || die "Could not determine the /home data size for the Btrfs layout conversion."
+    required_kib="$(btrfs_layout_required_kib "$MODE" "$copied_kib")"
+    info "Layout conversion needs up to ${required_kib} KiB free for the new @home subvolume."
+  fi
+
+  if ! btrfs_layout_has_capacity "$available_kib" "$required_kib"; then
+    die "Insufficient free space for the Btrfs layout conversion: ${available_kib} KiB available, ${required_kib} KiB required."
+  fi
+}
+
+verify_pending_layout() {
+  local default_id
+
+  mountpoint -q "$NEWROOT_MNT" || die "The new root subvolume is not mounted."
+  mountpoint -q "$NEWHOME_MNT" || die "The new home subvolume is not mounted."
+  [[ -d "$NEWROOT_MNT/etc" ]] || die "The new root subvolume does not contain /etc."
+  as_root btrfs subvolume show "$TOP_MNT/$ROOT_SUBVOL" >/dev/null
+  as_root btrfs subvolume show "$TOP_MNT/$HOME_SUBVOL" >/dev/null
+  findmnt --verify --tab-file "$FSTAB_TMP" >/dev/null
+
+  default_id="$(as_root btrfs subvolume show "$TOP_MNT/$ROOT_SUBVOL" | awk '/Subvolume ID:/ {print $3; exit}')"
+  [[ "$default_id" == "$DEFAULT_SUBVOL_ID" ]] || die "The new root subvolume ID changed during layout verification."
+}
+
+verify_default_subvolume() {
+  local configured_id
+  configured_id="$(as_root btrfs subvolume get-default "$TOP_MNT" | awk '/^ID / {print $2; exit}')"
+  [[ "$configured_id" == "$DEFAULT_SUBVOL_ID" ]] || die "Btrfs default subvolume is '$configured_id', expected '$DEFAULT_SUBVOL_ID'."
+}
+
 if [[ "$APPLY" -ne 1 ]]; then
   if [[ "$MODE" == "split-home-from-existing-rootfs" ]]; then
     cat <<EOF
 
 This was a check run. The script would:
   1. Install missing tools: btrfs-progs, rsync
-  2. Mount the btrfs top-level subvolume
-  3. Create a read-only safety snapshot of ${ROOT_SUBVOL}: $SAFETY_SNAPSHOT
-  4. Create subvolume: $HOME_SUBVOL
-  5. Rsync /home into $HOME_SUBVOL
-  6. Rewrite /etc/fstab so / follows the default btrfs subvolume and /home stays on $HOME_SUBVOL
-  7. Set $ROOT_SUBVOL as the default btrfs subvolume
-  8. Disable GRUB's automatic rootflags=subvol=... injection for btrfs roots
-  9. Set GRUB_DEFAULT=saved for rollback-controlled boot entry switching
- 10. Rebuild initramfs and grub if matching tools are available
+  2. Check free capacity for the new @home copy
+  3. Mount the btrfs top-level subvolume
+  4. Create a read-only safety snapshot of ${ROOT_SUBVOL}: $SAFETY_SNAPSHOT
+  5. Create subvolume: $HOME_SUBVOL
+  6. Rsync /home into $HOME_SUBVOL
+  7. Validate the pending subvolumes and generated /etc/fstab
+  8. Rewrite /etc/fstab and set $ROOT_SUBVOL as the default btrfs subvolume
+  9. Disable GRUB's automatic rootflags=subvol=... injection for btrfs roots
+ 10. Set GRUB_DEFAULT=saved for rollback-controlled boot entry switching
+ 11. Rebuild initramfs and grub if matching tools are available
 
 Run with --apply to execute.
 EOF
@@ -109,15 +153,16 @@ EOF
 
 This was a check run. The script would:
   1. Install missing tools: btrfs-progs, rsync
-  2. Mount the btrfs top-level subvolume
-  3. Create a read-only safety snapshot: $SAFETY_SNAPSHOT
-  4. Create subvolumes: $ROOT_SUBVOL and $HOME_SUBVOL
-  5. Rsync / into $ROOT_SUBVOL and /home into $HOME_SUBVOL
-  6. Rewrite /etc/fstab so / follows the default btrfs subvolume and /home stays on $HOME_SUBVOL
-  7. Set $ROOT_SUBVOL as the default btrfs subvolume
-  8. Disable GRUB's automatic rootflags=subvol=... injection for btrfs roots
-  9. Set GRUB_DEFAULT=saved for rollback-controlled boot entry switching
- 10. Rebuild initramfs and grub if matching tools are available
+  2. Check free capacity for the safety copy and new root/home subvolumes
+  3. Mount the btrfs top-level subvolume
+  4. Create a safety copy: $SAFETY_SNAPSHOT
+  5. Create subvolumes: $ROOT_SUBVOL and $HOME_SUBVOL
+  6. Rsync / into $ROOT_SUBVOL and /home into $HOME_SUBVOL
+  7. Validate the pending subvolumes and generated /etc/fstab
+  8. Rewrite /etc/fstab and set $ROOT_SUBVOL as the default btrfs subvolume
+  9. Disable GRUB's automatic rootflags=subvol=... injection for btrfs roots
+ 10. Set GRUB_DEFAULT=saved for rollback-controlled boot entry switching
+ 11. Rebuild initramfs and grub if matching tools are available
 
 Run with --apply to execute.
 EOF
@@ -129,6 +174,7 @@ ensure_sudo_session
 install_packages btrfs-progs rsync
 ensure_command btrfs
 ensure_command rsync
+require_layout_capacity
 
 WORKDIR="$(mktemp -d "/tmp/snapper-layout.XXXXXX")"
 TOP_MNT="$WORKDIR/top"
@@ -138,6 +184,9 @@ SAFETY_MNT="$WORKDIR/safety"
 mkdir -p "$TOP_MNT" "$NEWROOT_MNT" "$NEWHOME_MNT" "$SAFETY_MNT"
 
 cleanup() {
+  if [[ -n "${FSTAB_TMP:-}" && -f "${FSTAB_TMP:-}" ]]; then
+    rm -f "$FSTAB_TMP"
+  fi
   if mountpoint -q "$SAFETY_MNT" 2>/dev/null; then
     as_root umount "$SAFETY_MNT" || true
   fi
@@ -229,6 +278,13 @@ awk '!( $2=="/" || $2=="/home" )' /etc/fstab > "$FSTAB_TMP"
   printf 'UUID=%s  /home  btrfs  %s  0  0\n' "$ROOT_UUID" "$(with_subvol_opt "$ROOT_OPTS" "$HOME_SUBVOL")"
 } >> "$FSTAB_TMP"
 
+DEFAULT_SUBVOL_ID="$(
+  as_root btrfs subvolume show "$TOP_MNT/$ROOT_SUBVOL" \
+    | awk '/Subvolume ID:/ {print $3; exit}'
+)"
+[[ -n "$DEFAULT_SUBVOL_ID" ]] || die "Unable to determine subvolume ID for $ROOT_SUBVOL"
+
+verify_pending_layout
 run_as_root cp -a /etc/fstab "/etc/fstab.bak.$STAMP"
 run_as_root cp "$FSTAB_TMP" /etc/fstab
 if [[ "$MODE" == "flat-root-to-rootfs-home" ]]; then
@@ -236,13 +292,8 @@ if [[ "$MODE" == "flat-root-to-rootfs-home" ]]; then
 fi
 rm -f "$FSTAB_TMP"
 
-DEFAULT_SUBVOL_ID="$(
-  as_root btrfs subvolume show "$TOP_MNT/$ROOT_SUBVOL" \
-    | awk '/Subvolume ID:/ {print $3; exit}'
-)"
-[[ -n "$DEFAULT_SUBVOL_ID" ]] || die "Unable to determine subvolume ID for $ROOT_SUBVOL"
-
 run_as_root btrfs subvolume set-default "$DEFAULT_SUBVOL_ID" "$TOP_MNT"
+verify_default_subvolume
 disable_grub_btrfs_rootflags_if_possible
 ensure_grub_saved_default_if_possible
 if [[ "$MODE" == "flat-root-to-rootfs-home" ]]; then

@@ -11,7 +11,7 @@ usage() {
 Create a boot-level rollback target with snapper rollback.
 
 Usage:
-  rollback.sh [--check] [--apply] [--snapshot N] [--config root] [--no-reboot]
+  manage.sh snapshot rollback [--check] [--apply] [--snapshot N] [--config root] [--no-reboot]
 
 Notes:
   - Default mode is --check.

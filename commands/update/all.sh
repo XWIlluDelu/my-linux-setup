@@ -13,7 +13,7 @@ usage() {
 Routine update flow.
 
 Usage:
-  update-all.sh [--check] [--apply]
+  manage.sh update [--check] [--apply]
 
 Steps:
   1. Update distro packages
@@ -23,7 +23,7 @@ Steps:
 Notes:
   - Default mode is --check.
   - This is the main day-to-day update entrypoint.
-  - For fixing broken packages, use repair-system.sh.
+  - For fixing broken packages, use `manage.sh maintain repair`.
 EOF
 }
 
@@ -49,8 +49,8 @@ done
 if [[ "$APPLY" -ne 1 ]]; then
   cat <<EOF
 This was a check run. The script would:
-  1. $ROOT_DIR/commands/update/update-packages.sh --apply
-  2. $ROOT_DIR/flows/update-apps.sh --apply --yes
+  1. $ROOT_DIR/commands/update/packages.sh --apply
+  2. $ROOT_DIR/commands/update/apps.sh --apply --yes
   3. $ROOT_DIR/tasks/system/cleanup-system.sh --apply
 
 Run with --apply to execute.
@@ -59,10 +59,10 @@ EOF
 fi
 
 info "[1/3] Update distro packages"
-bash "$ROOT_DIR/commands/update/update-packages.sh" --apply
+bash "$ROOT_DIR/commands/update/packages.sh" --apply
 
 info "[2/3] Refresh managed apps and shell components when they are detected"
-bash "$ROOT_DIR/flows/update-apps.sh" --apply --yes </dev/null
+bash "$ROOT_DIR/commands/update/apps.sh" --apply --yes </dev/null
 
 info "[3/3] Run the reusable cleanup task"
 bash "$ROOT_DIR/tasks/system/cleanup-system.sh" --apply

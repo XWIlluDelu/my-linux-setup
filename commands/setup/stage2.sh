@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 source "$ROOT_DIR/lib/common.sh"
 
 ASSUME_YES=0
@@ -51,7 +51,7 @@ Stage 2:
   - run cleanup and print a summary
 
 Usage:
-  install-stage2.sh [--apply] [--yes] [--profile desktop|server] [-h|--help]
+  manage.sh setup stage2 [--apply] [--yes] [--profile desktop|server] [-h|--help]
 
 Options:
   --apply    Run stage 2 (prompts for profile and selections unless --yes is given)
@@ -61,22 +61,6 @@ Options:
 EOF
 }
 
-
-selected_bool_label() {
-  if [[ "$1" -eq 1 ]]; then
-    printf 'yes\n'
-  else
-    printf 'no\n'
-  fi
-}
-
-selected_on_off_label() {
-  if [[ "$1" -eq 1 ]]; then
-    printf 'ON\n'
-  else
-    printf 'OFF\n'
-  fi
-}
 
 apply_profile_defaults() {
   case "$INSTALL_PROFILE" in
@@ -175,138 +159,43 @@ collect_install_profile() {
 }
 
 print_selection_summary() {
-  cat <<EOF
-Selected stage2 items:
-  - profile=$INSTALL_PROFILE
-  - shell_env=$(selected_bool_label "$INSTALL_SHELL_ENV")
-  - desktop_essentials=$(selected_bool_label "$INSTALL_DESKTOP_ESSENTIALS")
-  - chinese_support=$(selected_bool_label "$INSTALL_CHINESE_SUPPORT")
-  - vscode=$(selected_bool_label "$INSTALL_VSCODE")
-  - edge=$(selected_bool_label "$INSTALL_EDGE")
-  - flatpak=$(selected_bool_label "$INSTALL_FLATPAK")
-  - wechat=$(selected_bool_label "$INSTALL_WECHAT")
-  - clash_verge_rev=$(selected_bool_label "$INSTALL_CLASH_VERGE_REV")
-  - zotero=$(selected_bool_label "$INSTALL_ZOTERO")
-  - obsidian=$(selected_bool_label "$INSTALL_OBSIDIAN")
-  - ghostty=$(selected_bool_label "$INSTALL_GHOSTTY")
-  - maple_font=$(selected_bool_label "$INSTALL_MAPLE_FONT")
-  - miniforge=$(selected_bool_label "$INSTALL_MINIFORGE")
-  - nvidia=$(selected_bool_label "$INSTALL_NVIDIA")
-EOF
-}
-
-set_selection_from_tag() {
-  case "$1" in
-    shell_env)
-      INSTALL_SHELL_ENV=1
-      ;;
-    desktop_essentials)
-      INSTALL_DESKTOP_ESSENTIALS=1
-      ;;
-    chinese_support)
-      INSTALL_CHINESE_SUPPORT=1
-      ;;
-    vscode)
-      INSTALL_VSCODE=1
-      ;;
-    edge)
-      INSTALL_EDGE=1
-      ;;
-    flatpak)
-      INSTALL_FLATPAK=1
-      ;;
-    wechat)
-      INSTALL_WECHAT=1
-      ;;
-    clash_verge_rev)
-      INSTALL_CLASH_VERGE_REV=1
-      ;;
-    zotero)
-      INSTALL_ZOTERO=1
-      ;;
-    obsidian)
-      INSTALL_OBSIDIAN=1
-      ;;
-    ghostty)
-      INSTALL_GHOSTTY=1
-      ;;
-    maple_font)
-      INSTALL_MAPLE_FONT=1
-      ;;
-    miniforge)
-      INSTALL_MINIFORGE=1
-      ;;
-    nvidia)
-      INSTALL_NVIDIA=1
-      ;;
-  esac
+  printf 'Selected stage2 items:\n'
+  printf '  - profile=%s\n' "$INSTALL_PROFILE"
+  component_print_lines "${SETUP_COMPONENTS[@]}"
 }
 
 reset_checklist_selection() {
-  INSTALL_SHELL_ENV=0
-  INSTALL_DESKTOP_ESSENTIALS=0
-  INSTALL_CHINESE_SUPPORT=0
-  INSTALL_VSCODE=0
-  INSTALL_EDGE=0
-  INSTALL_FLATPAK=0
-  INSTALL_WECHAT=0
-  INSTALL_CLASH_VERGE_REV=0
-  INSTALL_ZOTERO=0
-  INSTALL_OBSIDIAN=0
-  INSTALL_GHOSTTY=0
-  INSTALL_MAPLE_FONT=0
-  INSTALL_MINIFORGE=0
-  INSTALL_NVIDIA=0
+  component_reset "${SETUP_COMPONENTS[@]}"
 }
 
 collect_selection_with_text() {
+  local component variable
   printf '[INFO] Falling back to plain text prompts because a full-screen checklist is not available.\n'
   printf '[INFO] Text mode tips: press y/n then Enter for each item, press Ctrl+C to abort at any time.\n'
 
-  prompt_bool_text INSTALL_SHELL_ENV "Install tmux/zsh shell environment?" "$INSTALL_SHELL_ENV"
-  prompt_bool_text INSTALL_DESKTOP_ESSENTIALS "Install desktop essentials (mpv, wl-clipboard, gnome-tweaks, gnome-shell-extension-manager)?" "$INSTALL_DESKTOP_ESSENTIALS"
-  prompt_bool_text INSTALL_CHINESE_SUPPORT "Install Chinese support (fcitx5, rime, SC font preference)?" "$INSTALL_CHINESE_SUPPORT"
-  prompt_bool_text INSTALL_VSCODE "Install Visual Studio Code?" "$INSTALL_VSCODE"
-  prompt_bool_text INSTALL_EDGE "Install Microsoft Edge?" "$INSTALL_EDGE"
-  prompt_bool_text INSTALL_FLATPAK "Install Flatpak, Flathub remotes, Chinese settings, and Flatseal?" "$INSTALL_FLATPAK"
-  prompt_bool_text INSTALL_WECHAT "Install WeChat?" "$INSTALL_WECHAT"
-  prompt_bool_text INSTALL_CLASH_VERGE_REV "Install Clash Verge Rev?" "$INSTALL_CLASH_VERGE_REV"
-  prompt_bool_text INSTALL_ZOTERO "Install Zotero via the retorquere third-party repo path?" "$INSTALL_ZOTERO"
-  prompt_bool_text INSTALL_OBSIDIAN "Install Obsidian?" "$INSTALL_OBSIDIAN"
-  prompt_bool_text INSTALL_GHOSTTY "Install Ghostty terminal?" "$INSTALL_GHOSTTY"
-  prompt_bool_text INSTALL_MAPLE_FONT "Install Maple Mono NF CN unhinted?" "$INSTALL_MAPLE_FONT"
-  prompt_bool_text INSTALL_MINIFORGE "Install Miniforge to a hidden home path based on the upstream default?" "$INSTALL_MINIFORGE"
-  prompt_bool_text INSTALL_NVIDIA "Launch the interactive NVIDIA driver + CUDA installer at the end?" "$INSTALL_NVIDIA"
+  for component in "${SETUP_COMPONENTS[@]}"; do
+    variable="$(component_variable "$component")"
+    prompt_bool_text "$variable" "$(component_prompt setup "$component")" "$(component_value "$component")"
+  done
 }
 
 collect_selection_with_whiptail() {
   local selected_tags
+  local -a checklist_args
+  component_checklist_args checklist_args "${SETUP_COMPONENTS[@]}"
 
   selected_tags="$(
     whiptail \
       --title "Linux Setup Stage 2" \
       --checklist "Select what to install after the Fresh snapshot.\n\nKeys: ↑↓ move, Space toggle, Tab switch buttons, Enter confirm, Esc cancel." \
       24 90 14 \
-      "shell_env" "zsh/tmux packages + starship/zinit + managed shell profile" "$(selected_on_off_label "$INSTALL_SHELL_ENV")" \
-      "desktop_essentials" "core desktop apps: mpv, wl-clipboard, Tweaks, Extension Manager" "$(selected_on_off_label "$INSTALL_DESKTOP_ESSENTIALS")" \
-      "chinese_support" "fcitx5 + rime + Simplified Chinese font preference" "$(selected_on_off_label "$INSTALL_CHINESE_SUPPORT")" \
-      "vscode" "Visual Studio Code from Microsoft repository" "$(selected_on_off_label "$INSTALL_VSCODE")" \
-      "edge" "Microsoft Edge from Microsoft repository" "$(selected_on_off_label "$INSTALL_EDGE")" \
-      "flatpak" "Flatpak base + Flathub remotes + Flatseal + CJK settings" "$(selected_on_off_label "$INSTALL_FLATPAK")" \
-      "wechat" "WeChat official .deb package" "$(selected_on_off_label "$INSTALL_WECHAT")" \
-      "clash_verge_rev" "Clash Verge Rev .deb + service mode for TUN" "$(selected_on_off_label "$INSTALL_CLASH_VERGE_REV")" \
-      "zotero" "Zotero via retorquere third-party repository path" "$(selected_on_off_label "$INSTALL_ZOTERO")" \
-      "obsidian" "Obsidian .deb from GitHub release" "$(selected_on_off_label "$INSTALL_OBSIDIAN")" \
-      "ghostty" "Ghostty terminal + managed config" "$(selected_on_off_label "$INSTALL_GHOSTTY")" \
-      "maple_font" "Maple Mono NF CN unhinted font (user scope)" "$(selected_on_off_label "$INSTALL_MAPLE_FONT")" \
-      "miniforge" "Miniforge (user scope, hidden home prefix)" "$(selected_on_off_label "$INSTALL_MINIFORGE")" \
-      "nvidia" "Launch the interactive NVIDIA driver + CUDA installer at the end" "$(selected_on_off_label "$INSTALL_NVIDIA")" \
+      "${checklist_args[@]}" \
       3>&1 1>&2 2>&3
   )" || die "Stage 2 selection cancelled."
 
   reset_checklist_selection
   while [[ "$selected_tags" =~ \"([^\"]+)\" ]]; do
-    set_selection_from_tag "${BASH_REMATCH[1]}"
+    component_set "${BASH_REMATCH[1]}" 1
     selected_tags="${selected_tags#*"${BASH_REMATCH[0]}"}"
   done
 }
@@ -330,23 +219,10 @@ collect_stage2_selection() {
 
 write_plan_file() {
   PLAN_FILE="/tmp/linux-setup-stage2-plan.$$".env
-  cat > "$PLAN_FILE" <<EOF
-INSTALL_DESKTOP_ESSENTIALS=$INSTALL_DESKTOP_ESSENTIALS
-INSTALL_CHINESE_SUPPORT=$INSTALL_CHINESE_SUPPORT
-INSTALL_VSCODE=$INSTALL_VSCODE
-INSTALL_EDGE=$INSTALL_EDGE
-INSTALL_FLATPAK=$INSTALL_FLATPAK
-INSTALL_WECHAT=$INSTALL_WECHAT
-INSTALL_CLASH_VERGE_REV=$INSTALL_CLASH_VERGE_REV
-INSTALL_ZOTERO=$INSTALL_ZOTERO
-INSTALL_OBSIDIAN=$INSTALL_OBSIDIAN
-INSTALL_GHOSTTY=$INSTALL_GHOSTTY
-INSTALL_MAPLE_FONT=$INSTALL_MAPLE_FONT
-INSTALL_MINIFORGE=$INSTALL_MINIFORGE
-INSTALL_NVIDIA=$INSTALL_NVIDIA
-INSTALL_PROFILE=$INSTALL_PROFILE
-INSTALL_SHELL_ENV=$INSTALL_SHELL_ENV
-EOF
+  {
+    printf 'INSTALL_PROFILE=%s\n' "$INSTALL_PROFILE"
+    component_write_env "${SETUP_COMPONENTS[@]}"
+  } > "$PLAN_FILE"
 }
 
 run_fail_fast_step() {
@@ -358,9 +234,9 @@ run_fail_fast_step() {
 
   info "$message"
   if "$@"; then
-    record_stage2_result "$step_id" "$success_status" "$message"
+    record_result "$step_id" "$success_status" "$message"
   else
-    record_stage2_result "$step_id" failed "$message"
+    record_result "$step_id" failed "$message"
     die "Stage 2 stopped because a required step failed: $step_id"
   fi
 }
@@ -374,19 +250,15 @@ run_continue_step() {
 
   info "$message"
   if "$@"; then
-    record_stage2_result "$step_id" "$success_status" "$message"
+    record_result "$step_id" "$success_status" "$message"
   else
     warn "Step failed but stage2 will continue: $step_id"
-    record_stage2_result "$step_id" failed "$message"
+    record_result "$step_id" failed "$message"
   fi
 }
 
 stage2_failed_count() {
-  if [[ ! -f "${RESULT_LOG:-}" ]]; then
-    printf '0\n'
-    return 0
-  fi
-  awk -F'\t' '$2=="failed" {count++} END {print count+0}' "$RESULT_LOG"
+  result_failed_count "$RESULT_LOG"
 }
 
 write_summary_file() {
@@ -426,20 +298,10 @@ write_summary_file() {
     fi
     printf '\nSelected items:\n'
     printf -- '- profile: %s\n' "$INSTALL_PROFILE"
-    printf -- '- shell_env: %s\n' "$(selected_bool_label "$INSTALL_SHELL_ENV")"
-    printf -- '- desktop_essentials: %s\n' "$(selected_bool_label "$INSTALL_DESKTOP_ESSENTIALS")"
-    printf -- '- chinese_support: %s\n' "$(selected_bool_label "$INSTALL_CHINESE_SUPPORT")"
-    printf -- '- vscode: %s\n' "$(selected_bool_label "$INSTALL_VSCODE")"
-    printf -- '- edge: %s\n' "$(selected_bool_label "$INSTALL_EDGE")"
-    printf -- '- flatpak: %s\n' "$(selected_bool_label "$INSTALL_FLATPAK")"
-    printf -- '- wechat: %s\n' "$(selected_bool_label "$INSTALL_WECHAT")"
-    printf -- '- clash_verge_rev: %s\n' "$(selected_bool_label "$INSTALL_CLASH_VERGE_REV")"
-    printf -- '- zotero: %s\n' "$(selected_bool_label "$INSTALL_ZOTERO")"
-    printf -- '- obsidian: %s\n' "$(selected_bool_label "$INSTALL_OBSIDIAN")"
-    printf -- '- ghostty: %s\n' "$(selected_bool_label "$INSTALL_GHOSTTY")"
-    printf -- '- maple_font: %s\n' "$(selected_bool_label "$INSTALL_MAPLE_FONT")"
-    printf -- '- miniforge: %s\n' "$(selected_bool_label "$INSTALL_MINIFORGE")"
-    printf -- '- nvidia: %s\n' "$(selected_bool_label "$INSTALL_NVIDIA")"
+    local component
+    for component in "${SETUP_COMPONENTS[@]}"; do
+      printf -- '- %s: %s\n' "$component" "$(component_bool_label "$(component_value "$component")")"
+    done
     printf '\nResults:\n'
     if [[ -f "$RESULT_LOG" ]]; then
       while IFS=$'\t' read -r step status message; do
@@ -621,7 +483,7 @@ RUN_LOG="$CACHE_DIR/stage2.log"
 SUMMARY_FILE="$CACHE_DIR/stage2-summary.txt"
 RESULT_LOG="$CACHE_DIR/stage2-results.tsv"
 touch "$RESULT_LOG"
-export STAGE2_RESULT_LOG="$RESULT_LOG"
+export LINUX_SETUP_RESULT_LOG="$RESULT_LOG"
 
 printf "\n====== RUN STARTS AT %s ======\n" "$TIMESTAMP" >> "$RUN_LOG"
 exec > >(tee -a "$RUN_LOG") 2>&1
@@ -669,7 +531,7 @@ if [[ "$INSTALL_SHELL_ENV" -eq 1 ]]; then
     "[5/10] Install the shared shell environment and modern CLI tool bundle" \
     bash "$ROOT_DIR/tasks/shell/install-shell-environment.sh" --apply --profile "$INSTALL_PROFILE"
 else
-  record_stage2_result shell_env skipped_not_selected "Skipped by stage2 selection."
+  record_result shell_env skipped_not_selected "Skipped by stage2 selection."
 fi
 
 if [[ "$INSTALL_CHINESE_SUPPORT" -eq 1 ]]; then
@@ -679,7 +541,7 @@ if [[ "$INSTALL_CHINESE_SUPPORT" -eq 1 ]]; then
     "[6/10] Install Chinese support" \
     bash "$ROOT_DIR/tasks/desktop/install-chinese-support.sh" --apply
 else
-  record_stage2_result chinese_support skipped_not_selected "Skipped by stage2 selection."
+  record_result chinese_support skipped_not_selected "Skipped by stage2 selection."
 fi
 
 info "[7/10] Install selected packaged apps"
@@ -689,7 +551,7 @@ if ! bash "$ROOT_DIR/tasks/apps/install-apt-apps.sh" \
   --vscode "$INSTALL_VSCODE" \
   --edge "$INSTALL_EDGE"; then
   warn "Packaged app script failed before it could finish recording per-item results."
-  record_stage2_result apt_apps_runner failed "The packaged app installer exited unexpectedly."
+  record_result apt_apps_runner failed "The packaged app installer exited unexpectedly."
 fi
 
 info "[8/10] Install selected managed apps"
@@ -704,7 +566,7 @@ if ! bash "$ROOT_DIR/tasks/apps/install-external-apps.sh" \
   --maple-font "$INSTALL_MAPLE_FONT" \
   --miniforge "$INSTALL_MINIFORGE"; then
   warn "Managed app script failed before it could finish recording per-item results."
-  record_stage2_result external_apps_runner failed "The managed app installer exited unexpectedly."
+  record_result external_apps_runner failed "The managed app installer exited unexpectedly."
 fi
 
 if [[ "$INSTALL_NVIDIA" -eq 1 ]]; then
@@ -715,7 +577,7 @@ if [[ "$INSTALL_NVIDIA" -eq 1 ]]; then
     "[9/10] Install the NVIDIA driver + CUDA stack" \
     bash "$ROOT_DIR/drivers/nvidia/install-nvidia-cuda.sh" "${NVIDIA_ARGS[@]}"
 else
-  record_stage2_result nvidia skipped_not_selected "Skipped by stage2 selection."
+  record_result nvidia skipped_not_selected "Skipped by stage2 selection."
 fi
 
 run_continue_step \

@@ -10,7 +10,7 @@ Pinky v5 is a GNOME Shell extension that pins the focused window's geometry or k
 | `Super+Shift+T` | Toggle always-on-top on the focused window |
 | `Super+Shift+U` | Unpin every pinned window |
 
-The shortcuts are configurable under GNOME Settings → Keyboard → Custom Shortcuts.
+Pinky has no preferences UI, so these schema-backed shortcuts do not appear under GNOME Custom Shortcuts. Change them with `gsettings --schemadir ~/.local/share/gnome-shell/extensions/pinky@local/schemas set org.gnome.shell.extensions.pinky <key> "['<accelerator>']"`, where `<key>` is `pin-key`, `above-key`, or `unpin-all-key`.
 
 A 2px border marks managed windows: red for pinned, blue for always-on-top, and purple for both. Always-on-top state survives extension disable/enable; pins do not.
 
@@ -24,12 +24,16 @@ The indicator is a child of the window's `MetaWindowActor`, so it tracks the win
 
 ```bash
 mkdir -p ~/.local/share/gnome-shell/extensions
-cp -r extras/pinky ~/.local/share/gnome-shell/extensions/pinky@local
+rm -rf ~/.local/share/gnome-shell/extensions/pinky@local
+cp -a extras/pinky ~/.local/share/gnome-shell/extensions/pinky@local
 glib-compile-schemas ~/.local/share/gnome-shell/extensions/pinky@local/schemas
-gnome-extensions enable pinky@local
 ```
 
-On Wayland, GNOME Shell scans extensions only at login. Log out and back in after installation.
+On a new Wayland installation, log out and back in so GNOME Shell discovers the extension, then enable it:
+
+```bash
+gnome-extensions enable pinky@local
+```
 
 ## Verification
 

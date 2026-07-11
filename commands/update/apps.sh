@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 source "$ROOT_DIR/lib/common.sh"
 
 RUN_MODE="check"
@@ -43,7 +43,7 @@ usage() {
 Install or update managed apps and shell components.
 
 Usage:
-  update-apps.sh [--apply] [--yes] [-h|--help]
+  manage.sh update apps [--apply] [--yes] [-h|--help]
 
 Options:
   --apply  Run install/update (interactive selection if TTY)
@@ -272,141 +272,42 @@ detect_installed_apps() {
   fi
 }
 
-bool_label() {
-  if [[ "$1" -eq 1 ]]; then
-    printf 'yes\n'
-  else
-    printf 'no\n'
-  fi
-}
-
 has_selected_apps() {
-  [[ "$INSTALL_SHELL_ENV" -eq 1 || "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 || "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 || "$INSTALL_FLATPAK" -eq 1 || "$INSTALL_WECHAT" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_ZOTERO" -eq 1 || "$INSTALL_OBSIDIAN" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 || "$INSTALL_MAPLE_FONT" -eq 1 || "$INSTALL_MINIFORGE" -eq 1 || "$REDEPLOY_SHELL_CONFIG" -eq 1 ]]
+  component_any_selected "${UPDATE_COMPONENTS[@]}"
 }
 
 has_selected_packaged_apps() {
-  [[ "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 || "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 ]]
+  component_any_selected "${PACKAGED_APP_COMPONENTS[@]}"
 }
 
 has_selected_managed_apps() {
-  [[ "$INSTALL_FLATPAK" -eq 1 || "$INSTALL_WECHAT" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_ZOTERO" -eq 1 || "$INSTALL_OBSIDIAN" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 || "$INSTALL_MAPLE_FONT" -eq 1 || "$INSTALL_MINIFORGE" -eq 1 ]]
+  component_any_selected "${MANAGED_APP_COMPONENTS[@]}"
 }
 
 reset_selected_apps() {
-  INSTALL_SHELL_ENV=0
-  INSTALL_DESKTOP_ESSENTIALS=0
-  INSTALL_VSCODE=0
-  INSTALL_EDGE=0
-  INSTALL_FLATPAK=0
-  INSTALL_WECHAT=0
-  INSTALL_CLASH_VERGE_REV=0
-  INSTALL_ZOTERO=0
-  INSTALL_OBSIDIAN=0
-  INSTALL_GHOSTTY=0
-  INSTALL_MAPLE_FONT=0
-  INSTALL_MINIFORGE=0
-  REDEPLOY_SHELL_CONFIG=0
-}
-
-set_selected_app_from_tag() {
-  case "$1" in
-    shell_env)
-      INSTALL_SHELL_ENV=1
-      ;;
-    desktop_essentials)
-      INSTALL_DESKTOP_ESSENTIALS=1
-      ;;
-    vscode)
-      INSTALL_VSCODE=1
-      ;;
-    edge)
-      INSTALL_EDGE=1
-      ;;
-    flatpak)
-      INSTALL_FLATPAK=1
-      ;;
-    wechat)
-      INSTALL_WECHAT=1
-      ;;
-    clash_verge_rev)
-      INSTALL_CLASH_VERGE_REV=1
-      ;;
-    zotero)
-      INSTALL_ZOTERO=1
-      ;;
-    obsidian)
-      INSTALL_OBSIDIAN=1
-      ;;
-    ghostty)
-      INSTALL_GHOSTTY=1
-      ;;
-    maple_font)
-      INSTALL_MAPLE_FONT=1
-      ;;
-    miniforge)
-      INSTALL_MINIFORGE=1
-      ;;
-    redeploy_shell_config)
-      REDEPLOY_SHELL_CONFIG=1
-      ;;
-  esac
+  component_reset "${UPDATE_COMPONENTS[@]}"
 }
 
 print_current_selection() {
-  cat <<EOF
-Current app update selection:
-  - shell_env=$(bool_label "$INSTALL_SHELL_ENV")
-  - redeploy_shell_config=$(bool_label "$REDEPLOY_SHELL_CONFIG")
-  - desktop_essentials=$(bool_label "$INSTALL_DESKTOP_ESSENTIALS")
-  - vscode=$(bool_label "$INSTALL_VSCODE")
-  - edge=$(bool_label "$INSTALL_EDGE")
-  - flatpak=$(bool_label "$INSTALL_FLATPAK")
-  - wechat=$(bool_label "$INSTALL_WECHAT")
-  - clash_verge_rev=$(bool_label "$INSTALL_CLASH_VERGE_REV")
-  - zotero=$(bool_label "$INSTALL_ZOTERO")
-  - obsidian=$(bool_label "$INSTALL_OBSIDIAN")
-  - ghostty=$(bool_label "$INSTALL_GHOSTTY")
-  - maple_font=$(bool_label "$INSTALL_MAPLE_FONT")
-  - miniforge=$(bool_label "$INSTALL_MINIFORGE")
-EOF
+  printf 'Current app update selection:\n'
+  component_print_lines "${UPDATE_COMPONENTS[@]}"
 }
 
 collect_selection_with_text() {
+  local component variable
   printf '[INFO] Using plain text prompts for app update selection.\n'
   printf '[INFO] Text mode tips: press y/n then Enter for each item, press Ctrl+C to abort at any time.\n'
 
-  prompt_bool_text INSTALL_SHELL_ENV "Install/Update managed shell env, modern CLI tools, starship, and zinit?" "$INSTALL_SHELL_ENV"
-  prompt_bool_text REDEPLOY_SHELL_CONFIG "Redeploy managed shell config files (.profile/.bashrc/.zshrc/~/.config/starship.toml)?" 0
-  prompt_bool_text INSTALL_DESKTOP_ESSENTIALS "Install/Update desktop essentials (mpv, wl-clipboard, gnome-tweaks, gnome-shell-extension-manager)?" "$INSTALL_DESKTOP_ESSENTIALS"
-  prompt_bool_text INSTALL_VSCODE "Install/Update Visual Studio Code?" "$INSTALL_VSCODE"
-  prompt_bool_text INSTALL_EDGE "Install/Update Microsoft Edge?" "$INSTALL_EDGE"
-  prompt_bool_text INSTALL_FLATPAK "Install/Update Flatpak, Flathub settings, and Flatseal?" "$INSTALL_FLATPAK"
-  prompt_bool_text INSTALL_WECHAT "Install/Update WeChat (official .deb)?" "$INSTALL_WECHAT"
-  prompt_bool_text INSTALL_CLASH_VERGE_REV "Install/Update Clash Verge Rev (official distro path)?" "$INSTALL_CLASH_VERGE_REV"
-  prompt_bool_text INSTALL_ZOTERO "Install/Update Zotero (zotero-deb on Debian/Ubuntu, official tarball elsewhere)?" "$INSTALL_ZOTERO"
-  prompt_bool_text INSTALL_OBSIDIAN "Install/Update Obsidian (official .deb on Debian/Ubuntu, official AppImage elsewhere)?" "$INSTALL_OBSIDIAN"
-  prompt_bool_text INSTALL_GHOSTTY "Install/Update Ghostty (official-doc distro path)?" "$INSTALL_GHOSTTY"
-  prompt_bool_text INSTALL_MAPLE_FONT "Install/Update Maple Mono NF CN unhinted?" "$INSTALL_MAPLE_FONT"
-  prompt_bool_text INSTALL_MINIFORGE "Install/Update Miniforge?" "$INSTALL_MINIFORGE"
+  for component in "${UPDATE_COMPONENTS[@]}"; do
+    variable="$(component_variable "$component")"
+    prompt_bool_text "$variable" "$(component_prompt update "$component")" "$(component_value "$component")"
+  done
 }
 
 collect_selection_with_whiptail() {
-  local selected_tags=()
-  local -a args=()
-
-  args+=("shell_env" "tmux/zsh + modern CLI tools + starship/zinit + managed shell state" "$( [[ "$INSTALL_SHELL_ENV" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("redeploy_shell_config" "Overwrite managed .profile/.bashrc/.zshrc/~/.config/starship.toml" OFF)
-  args+=("desktop_essentials" "mpv + wl-clipboard + Tweaks + Extension Manager" "$( [[ "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("vscode" "Visual Studio Code from the Microsoft repository" "$( [[ "$INSTALL_VSCODE" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("edge" "Microsoft Edge from the Microsoft repository" "$( [[ "$INSTALL_EDGE" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("flatpak" "Flatpak + Flathub + Flatseal + CJK settings" "$( [[ "$INSTALL_FLATPAK" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("wechat" "WeChat official .deb package" "$( [[ "$INSTALL_WECHAT" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("clash_verge_rev" "Clash Verge Rev via the official distro path" "$( [[ "$INSTALL_CLASH_VERGE_REV" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("zotero" "Zotero via zotero-deb or the official tarball" "$( [[ "$INSTALL_ZOTERO" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("obsidian" "Obsidian via the official .deb or AppImage" "$( [[ "$INSTALL_OBSIDIAN" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("ghostty" "Ghostty terminal via the official-doc distro path + managed config" "$( [[ "$INSTALL_GHOSTTY" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("maple_font" "Maple Mono NF CN unhinted font (user scope)" "$( [[ "$INSTALL_MAPLE_FONT" -eq 1 ]] && printf ON || printf OFF )")
-  args+=("miniforge" "Miniforge in hidden user home prefix" "$( [[ "$INSTALL_MINIFORGE" -eq 1 ]] && printf ON || printf OFF )")
+  local selected_tag
+  local -a selected_tags checklist_args
+  component_checklist_args checklist_args "${UPDATE_COMPONENTS[@]}"
 
   selected_tags=(
     $(
@@ -414,15 +315,14 @@ collect_selection_with_whiptail() {
         --title "Linux Setup App Updates" \
         --checklist "Select which apps and shell components to refresh.\n\nKeys: ↑↓ move, Space toggle, Tab switch buttons, Enter confirm, Esc cancel." \
         22 92 11 \
-        "${args[@]}" \
+        "${checklist_args[@]}" \
         3>&1 1>&2 2>&3
     )
   ) || die "App update selection cancelled."
 
   reset_selected_apps
-  while [[ "${#selected_tags[@]}" -gt 0 ]]; do
-    set_selected_app_from_tag "${selected_tags[0]//\"/}"
-    selected_tags=("${selected_tags[@]:1}")
+  for selected_tag in "${selected_tags[@]}"; do
+    component_set "${selected_tag//\"/}" 1
   done
 }
 
@@ -564,11 +464,7 @@ run_app_update_preflight() {
 }
 
 app_update_failed_count() {
-  if [[ ! -f "${RESULT_LOG:-}" ]]; then
-    printf '0\n'
-    return 0
-  fi
-  awk -F'\t' '$2=="failed" {count++} END {print count+0}' "$RESULT_LOG"
+  result_failed_count "$RESULT_LOG"
 }
 
 write_summary_file() {
@@ -689,7 +585,7 @@ RUN_LOG="$CACHE_DIR/update-apps.log"
 SUMMARY_FILE="$CACHE_DIR/update-apps-summary.txt"
 RESULT_LOG="$CACHE_DIR/update-apps-results.tsv"
 touch "$RESULT_LOG"
-export STAGE2_RESULT_LOG="$RESULT_LOG"
+export LINUX_SETUP_RESULT_LOG="$RESULT_LOG"
 
 printf "\n====== RUN STARTS AT %s ======\n" "$TIMESTAMP" >> "$RUN_LOG"
 exec > >(tee -a "$RUN_LOG") 2>&1
@@ -718,9 +614,9 @@ if [[ "$INSTALL_SHELL_ENV" -eq 1 ]]; then
     bash "$ROOT_DIR/tasks/shell/install-shell-environment.sh" \
     "${shell_env_args[@]}"; then
     warn "The shell environment update step exited unexpectedly."
-    record_stage2_result shell_env failed "The shell environment update step exited unexpectedly."
+    record_result shell_env failed "The shell environment update step exited unexpectedly."
   else
-    record_stage2_result shell_env updated "Shell environment tools and managed components refreshed."
+    record_result shell_env updated "Shell environment tools and managed components refreshed."
   fi
 fi
 
@@ -733,9 +629,9 @@ if [[ "$REDEPLOY_SHELL_CONFIG" -eq 1 ]]; then
     --config-only \
     --profile "$local_profile"; then
     warn "Shell config redeploy exited unexpectedly."
-    record_stage2_result redeploy_shell_config failed "Shell config redeploy exited unexpectedly."
+    record_result redeploy_shell_config failed "Shell config redeploy exited unexpectedly."
   else
-    record_stage2_result redeploy_shell_config ok "Shell configuration files redeployed."
+    record_result redeploy_shell_config ok "Shell configuration files redeployed."
   fi
 fi
 
@@ -746,7 +642,7 @@ if has_selected_packaged_apps; then
     --vscode "$INSTALL_VSCODE" \
     --edge "$INSTALL_EDGE"; then
     warn "The packaged app update step exited unexpectedly."
-    record_stage2_result packaged_apps_runner failed "The packaged app update runner exited unexpectedly."
+    record_result packaged_apps_runner failed "The packaged app update runner exited unexpectedly."
   fi
 fi
 
@@ -763,7 +659,7 @@ if has_selected_managed_apps; then
     --maple-font "$INSTALL_MAPLE_FONT" \
     --miniforge "$INSTALL_MINIFORGE"; then
     warn "The managed app update step exited unexpectedly."
-    record_stage2_result managed_apps_runner failed "The managed app update runner exited unexpectedly."
+    record_result managed_apps_runner failed "The managed app update runner exited unexpectedly."
   fi
 fi
 

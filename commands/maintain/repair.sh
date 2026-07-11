@@ -11,7 +11,7 @@ usage() {
 Repair package state and rebuild kernel-related artifacts on Debian/Ubuntu.
 
 Usage:
-  repair-system.sh [--check] [--apply]
+  manage.sh maintain repair [--check] [--apply]
 
 Notes:
   - Default mode is --check.
