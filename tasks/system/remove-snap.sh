@@ -16,6 +16,7 @@ Notes:
   - Default mode is --check (dry-run).
   - This script expects an apt-get based Debian/Ubuntu system.
   - If snap/snapd is already absent, the script only enforces the APT pin and refreshes package metadata.
+  - On --apply, removal, pinning, metadata refresh, and final no-snap verification are required steps.
 EOF
 }
 
@@ -104,7 +105,7 @@ fi
 
 if [[ ${#SNAP_PACKAGES[@]} -gt 0 ]]; then
   for pkg in "${SNAP_PACKAGES[@]}"; do
-    try_run_as_root snap remove --purge "$pkg"
+    run_as_root snap remove --purge "$pkg"
   done
 else
   info "No installed snap packages detected."
@@ -113,8 +114,8 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
   for unit in snapd.socket snapd.service snapd.seeded.service; do
     if systemctl list-unit-files "$unit" --no-legend 2>/dev/null | grep -q "^$unit"; then
-      try_run_as_root systemctl stop "$unit"
-      try_run_as_root systemctl disable --now "$unit"
+      run_as_root systemctl stop "$unit"
+      run_as_root systemctl disable --now "$unit"
     else
       info "systemd unit not present: $unit"
     fi
@@ -125,21 +126,21 @@ fi
 
 if [[ ${#SNAP_MOUNTS[@]} -gt 0 ]]; then
   for mountpoint in "${SNAP_MOUNTS[@]}"; do
-    try_run_as_root umount "$mountpoint" -lf
+    run_as_root umount "$mountpoint" -lf
   done
 else
   info "No mounted /snap entries detected."
 fi
 
 if [[ "$SNAPD_INSTALLED" -eq 1 ]]; then
-  try_run_as_root apt-get purge -y snapd
+  run_as_root apt-get purge -y snapd
 else
   info "snapd package is already absent."
 fi
 
 for path in "$HOME/snap" /var/snap /var/lib/snapd /var/cache/snapd /usr/lib/snapd /snap; do
   if [[ -e "$path" ]]; then
-    try_run_as_root rm -rf -- "$path"
+    run_as_root rm -rf -- "$path"
   else
     info "Path not present: $path"
   fi
@@ -157,9 +158,39 @@ else
   info "[dry-run] write $NOSNAP_PREF"
 fi
 
-try_run_as_root apt-get update
+run_as_root apt-get update
+
+verify_no_snap_state() {
+  local -a remaining_packages remaining_mounts
+
+  if dpkg_package_installed snapd; then
+    die "snapd remains installed after removal."
+  fi
+
+  mapfile -t remaining_packages < <(
+    if command -v snap >/dev/null 2>&1; then
+      snap list 2>/dev/null | awk 'NR > 1 {print $1}' || true
+    fi
+  )
+  if [[ ${#remaining_packages[@]} -gt 0 ]]; then
+    die "Snap packages remain after removal: ${remaining_packages[*]}"
+  fi
+
+  mapfile -t remaining_mounts < <(
+    findmnt -rn -o TARGET 2>/dev/null | awk '$1 == "/snap" || $1 ~ "^/snap/"'
+  )
+  if [[ ${#remaining_mounts[@]} -gt 0 ]]; then
+    die "Snap mounts remain after removal: ${remaining_mounts[*]}"
+  fi
+
+  if ! as_root grep -Fqx 'Package: snapd' "$NOSNAP_PREF" \
+    || ! as_root grep -Fqx 'Pin-Priority: -10' "$NOSNAP_PREF"; then
+    die "The snapd APT pin was not written correctly: $NOSNAP_PREF"
+  fi
+}
 
 if [[ "$APPLY" -eq 1 ]]; then
+  verify_no_snap_state
   info "Snap has been purged and locked."
 else
   info "Check run completed. Re-run with --apply to make changes."

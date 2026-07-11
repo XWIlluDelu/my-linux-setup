@@ -11,7 +11,7 @@ usage() {
 Create a read-only snapper snapshot.
 
 Usage:
-  create-snapshot.sh [--check] [--apply] [--description TEXT] [--config root] [--cleanup number]
+  manage.sh snapshot create [--check] [--apply] [--description TEXT] [--config root] [--cleanup number]
 
 Notes:
   - Default mode is --check.

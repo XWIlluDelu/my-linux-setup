@@ -2,8 +2,6 @@
 
 A local web UI for browsing, searching, and managing your [Claude Code](https://claude.ai/code) session history.
 
-![Dark terminal-style UI showing a searchable table of Claude Code sessions]()
-
 ## What it does
 
 Reads from `~/.claude/` and exposes a browsable interface over all recorded sessions:
@@ -21,7 +19,7 @@ Reads from `~/.claude/` and exposes a browsable interface over all recorded sess
 ./run.sh
 
 # Open in browser
-open http://127.0.0.1:8765
+xdg-open http://127.0.0.1:8765
 
 # Stop the server
 ./stop.sh
@@ -33,14 +31,15 @@ The server runs on `127.0.0.1:8765` by default. You can override the port, and t
 SESSION_MANAGER_PORT=9000 ./run.sh
 ```
 
-Logs go to `/tmp/session-manager.log`.
+Logs go to `${TMPDIR:-/tmp}/session-manager.log`.
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
+- Bash with `ps` and `seq` for process management; `lsof` is optional but enables occupied-port discovery and fallback stopping
 - Claude Code installed (data lives in `~/.claude/`)
 
-No external Python dependencies — uses only the standard library.
+The Python server has no third-party package dependencies; it uses only the standard library.
 
 ## Architecture
 

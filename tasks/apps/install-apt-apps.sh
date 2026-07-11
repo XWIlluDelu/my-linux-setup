@@ -53,13 +53,13 @@ parse_bool() {
 
 record_result_for_disabled_items() {
   if [[ "$DESKTOP_ESSENTIALS" -eq 0 ]]; then
-    record_stage2_result desktop_essentials skipped_not_selected "Skipped by stage2 selection."
+    record_result desktop_essentials skipped_not_selected "Skipped by stage2 selection."
   fi
   if [[ "$INSTALL_VSCODE" -eq 0 ]]; then
-    record_stage2_result vscode skipped_not_selected "Skipped by stage2 selection."
+    record_result vscode skipped_not_selected "Skipped by stage2 selection."
   fi
   if [[ "$INSTALL_EDGE" -eq 0 ]]; then
-    record_stage2_result edge skipped_not_selected "Skipped by stage2 selection."
+    record_result edge skipped_not_selected "Skipped by stage2 selection."
   fi
 }
 
@@ -69,10 +69,10 @@ mark_repo_failure() {
 
   MICROSOFT_REPOS_READY=0
   if [[ "$INSTALL_VSCODE" -eq 1 ]]; then
-    record_stage2_result vscode failed "$message"
+    record_result vscode failed "$message"
   fi
   if [[ "$INSTALL_EDGE" -eq 1 && "$ARCH" == "amd64" ]]; then
-    record_stage2_result edge failed "$message"
+    record_result edge failed "$message"
   fi
 }
 
@@ -126,7 +126,7 @@ setup_microsoft_repos() {
         | as_root tee "$EDGE_LIST" >/dev/null
     else
       warn "Edge is only available from the official repo on amd64. Skipping Edge source for $ARCH."
-      record_stage2_result edge skipped_unsupported "Microsoft Edge official repo only supports amd64."
+      record_result edge skipped_unsupported "Microsoft Edge official repo only supports amd64."
     fi
   fi
 
@@ -165,9 +165,9 @@ install_desktop_essentials() {
     else
       status="installed"
     fi
-    record_stage2_result desktop_essentials "$status" "Installed desktop essentials: ${packages[*]}"
+    record_result desktop_essentials "$status" "Installed desktop essentials: ${packages[*]}"
   else
-    record_stage2_result desktop_essentials failed "Failed to install desktop essentials."
+    record_result desktop_essentials failed "Failed to install desktop essentials."
   fi
 }
 
@@ -183,7 +183,7 @@ install_vscode() {
   fi
 
   if ! package_available code; then
-    record_stage2_result vscode failed "Package 'code' is not available from the Microsoft repo."
+    record_result vscode failed "Package 'code' is not available from the Microsoft repo."
     return 0
   fi
 
@@ -197,9 +197,9 @@ install_vscode() {
     else
       status="installed"
     fi
-    record_stage2_result vscode "$status" "Installed Visual Studio Code from the Microsoft repository."
+    record_result vscode "$status" "Installed Visual Studio Code from the Microsoft repository."
   else
-    record_stage2_result vscode failed "Failed to install Visual Studio Code."
+    record_result vscode failed "Failed to install Visual Studio Code."
   fi
 }
 
@@ -219,7 +219,7 @@ install_edge() {
   fi
 
   if ! package_available microsoft-edge-stable; then
-    record_stage2_result edge failed "Package 'microsoft-edge-stable' is not available for this distro/repo combination."
+    record_result edge failed "Package 'microsoft-edge-stable' is not available for this distro/repo combination."
     return 0
   fi
 
@@ -233,9 +233,9 @@ install_edge() {
     else
       status="installed"
     fi
-    record_stage2_result edge "$status" "Installed Microsoft Edge from the Microsoft repository."
+    record_result edge "$status" "Installed Microsoft Edge from the Microsoft repository."
   else
-    record_stage2_result edge failed "Failed to install Microsoft Edge."
+    record_result edge failed "Failed to install Microsoft Edge."
   fi
 }
 
@@ -293,7 +293,7 @@ purge_debian_desktop_defaults() {
   done
 
   if [[ "${#installed_packages[@]}" -eq 0 ]]; then
-    record_stage2_result desktop_cleanup already_present "No Debian desktop defaults matched the cleanup list."
+    record_result desktop_cleanup already_present "No Debian desktop defaults matched the cleanup list."
     return 0
   fi
 
@@ -315,13 +315,13 @@ purge_debian_desktop_defaults() {
     if [[ "${#removed_metapackages[@]}" -gt 0 ]]; then
       message="${message}; also removed GNOME metapackages: ${removed_metapackages[*]}"
     fi
-    record_stage2_result desktop_cleanup "$status" "$message"
+    record_result desktop_cleanup "$status" "$message"
   else
     message="Failed to purge Debian desktop defaults: ${installed_packages[*]}"
     if [[ "${#removed_metapackages[@]}" -gt 0 ]]; then
       message="${message}; attempted cleanup would also remove GNOME metapackages: ${removed_metapackages[*]}"
     fi
-    record_stage2_result desktop_cleanup failed "$message"
+    record_result desktop_cleanup failed "$message"
   fi
 }
 

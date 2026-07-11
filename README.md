@@ -1,11 +1,11 @@
 # my-linux-setup
 
-A collection of Linux setup, update, and maintenance scripts. Default repo path: `~/my-linux-setup`.
+A reproducible setup for one Linux workstation. Users normally run only the Stage 1 and Stage 2 commands; maintenance commands and post-install notes remain available for later inspection. Default repo path: `~/my-linux-setup`.
 
 ## Safety model
 
-- Dry-run by default: scripts default to `--check`; only an explicit `--apply` mutates the system.
-- `setup stage1` rewrites the Btrfs subvolume layout and reboots; do not run it back-to-back with `stage2`.
+- Dry-run by default: commands default to `--check`. Mutation requires `--apply`, setup/update `--yes`, or mirror `--auto`/`--reset`; those latter flags explicitly enter apply mode.
+- `setup stage1` rewrites the Btrfs subvolume layout. Verify its reported layout, reboot manually, then run `stage2`.
 - `setup stage2` targets Debian/Ubuntu + Btrfs root; some low-level tasks support apt/dnf/zypper/pacman, but the full setup flow is not cross-distro.
 - `extras/` holds standalone tools and issue notes and is not part of the `manage.sh` main flow.
 
@@ -16,11 +16,11 @@ bash ~/my-linux-setup/manage.sh --help
 bash ~/my-linux-setup/manage.sh check
 ```
 
-Running `manage.sh` with no arguments opens an interactive menu; with arguments it dispatches by subcommand.
+Running `manage.sh` with no arguments opens an interactive menu; with arguments it dispatches by subcommand. Run `bash tests/run.sh` to verify the repository's non-mutating contracts.
 
 | Command | Action |
 |---|---|
-| `setup stage1` | Convert Btrfs root to `@rootfs` + `@home`, create a safety snapshot, reboot |
+| `setup stage1` | Convert Btrfs root to `@rootfs` + `@home`, create a safety snapshot, then stop for verification |
 | `setup stage2` | After reboot, initialize snapper, remove snap, upgrade the system, install selected components, cleanup |
 | `update` / `update all` | Update system packages, refresh detected managed apps and shell components, cleanup |
 | `update packages` | Run only the system package upgrade |
@@ -29,8 +29,23 @@ Running `manage.sh` with no arguments opens an interactive menu; with arguments 
 | `maintain mirror` | Probe, switch, or restore the APT mirror |
 | `snapshot create` | Create a read-only snapper snapshot |
 | `snapshot rollback` | Create a boot-level rollback target with snapper |
-| `shell sync` | Rewrite only the managed shell config files |
+| `shell sync` | Rewrite managed shell configuration and state; remove only the marked legacy tmux file |
 | `driver nvidia` | Standalone NVIDIA driver + CUDA installer |
+
+## Repository map
+
+| Path | Authority |
+|---|---|
+| `manage.sh` | Stable public command names and dispatch only |
+| `commands/` | One handler for each public command group, plus the optional menu |
+| `tasks/` | Focused installation and system operations composed by commands |
+| `lib/` | Shared helpers, one domain per file; `common.sh` is the compatibility import |
+| `assets/` | Configuration files deployed by setup |
+| `drivers/` | Independent hardware installers and their documentation |
+| `extras/` | Post-install configuration records, fixes, and optional tools; never run automatically |
+| `tests/` | Non-mutating command, failure-path, and helper contracts |
+
+A coding agent should begin with `manage.sh`, follow the selected handler under `commands/`, and descend into `tasks/` only for implementation details. Optional work such as `fcitx5-vinput` starts under `extras/` after the base installation.
 
 ## Setup flow
 
@@ -40,7 +55,7 @@ Stage 1: run only on a fresh install, after confirming root is Btrfs and `/home`
 bash ~/my-linux-setup/manage.sh setup stage1 --apply
 ```
 
-After the reboot, run Stage 2:
+Stage 1 checks capacity before copying data and stops before rebooting. Verify its reported `findmnt`, subvolume, and `/etc/fstab` checks, reboot manually, then run Stage 2:
 
 ```bash
 bash ~/my-linux-setup/manage.sh setup stage2 --apply --profile desktop
@@ -81,7 +96,7 @@ Refresh managed apps and shell components:
 bash ~/my-linux-setup/manage.sh update apps --apply
 ```
 
-`update apps` first detects the current managed state: installed/managed Edge, VS Code, Flatpak, WeChat, Clash Verge Rev, Zotero, Obsidian, Ghostty, Maple Font, Miniforge, and the shell environment are selected by default; with a TTY present you can add or remove items interactively, and `--yes` uses the detection result.
+`update apps` first detects the current managed state: desktop essentials, Edge, VS Code, Flatpak, WeChat, Clash Verge Rev, Zotero, Obsidian, Ghostty, Maple Font, Miniforge, and the shell environment are selected by default; with a TTY present you can add or remove items interactively. `--yes` applies the detection result without prompting.
 
 Repair package state:
 
@@ -97,9 +112,11 @@ bash ~/my-linux-setup/manage.sh maintain mirror --auto
 bash ~/my-linux-setup/manage.sh maintain mirror --reset
 ```
 
+Mirror changes keep the original source files, validate the selected mirror with `apt-get update`, and restore both sources and metadata if validation fails.
+
 ## Shell config boundaries
 
-Managed files:
+Managed configuration and state:
 
 - `~/.profile`
 - `~/.bashrc`
@@ -107,8 +124,12 @@ Managed files:
 - `~/.config/shell/env.sh`
 - `~/.config/shell/aliases.sh`
 - `~/.config/starship.toml`
+- `~/.local/state/linux-setup/shell-env-profile`
+- `~/.local/state/linux-setup/shell-env.env`
 
-Rewrite only these files:
+A sync also removes `~/.tmux.conf` only when its first line is the legacy marker `# Linux Setup tmux config`; unrelated tmux files are untouched.
+
+Rewrite the managed shell files and state:
 
 ```bash
 bash ~/my-linux-setup/manage.sh shell sync --apply --profile desktop

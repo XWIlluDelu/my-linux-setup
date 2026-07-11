@@ -5,15 +5,18 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 source "$ROOT_DIR/lib/common.sh"
+source "$ROOT_DIR/lib/apt-mirror.sh"
 
 MODE="auto"
+APT_ETC_DIR="${LINUX_SETUP_APT_ETC_DIR:-/etc/apt}"
+OS_RELEASE_FILE="${LINUX_SETUP_OS_RELEASE_FILE:-/etc/os-release}"
 
 usage() {
   cat <<'EOF'
 Select and apply a stable APT mirror strategy.
 
 Usage:
-  set-apt-mirror.sh [--check] [--apply] [--auto] [--list] [--reset]
+  manage.sh maintain mirror [--check] [--apply] [--auto] [--list] [--reset]
 
 Options:
   --check    Dry run mode (default)
@@ -65,12 +68,12 @@ ensure_command sed
 ensure_command awk
 ensure_command python3
 
-OS_ID="$(awk -F= '/^ID=/{print $2}' /etc/os-release | tr -d '"')"
+OS_ID="$(awk -F= '/^ID=/{print $2}' "$OS_RELEASE_FILE" | tr -d '"')"
 if [[ "$OS_ID" != "ubuntu" && "$OS_ID" != "debian" ]]; then
   die "Unsupported OS: $OS_ID. Only Ubuntu and Debian are supported."
 fi
 
-OS_CODENAME="$(awk -F= '/^(VERSION_CODENAME|UBUNTU_CODENAME)=/{print $2}' /etc/os-release | tr -d '"' | tail -n 1)"
+OS_CODENAME="$(awk -F= '/^(VERSION_CODENAME|UBUNTU_CODENAME)=/{print $2}' "$OS_RELEASE_FILE" | tr -d '"' | tail -n 1)"
 
 declare -A MIRRORS=(
   ["official_ubuntu"]="archive.ubuntu.com"
@@ -162,11 +165,11 @@ rank_mirrors() {
 
 get_active_source_files() {
   local -a files=()
-  if [[ -f "/etc/apt/sources.list" ]]; then
-    files+=("/etc/apt/sources.list")
+  if [[ -f "$APT_ETC_DIR/sources.list" ]]; then
+    files+=("$APT_ETC_DIR/sources.list")
   fi
-  if [[ -f "/etc/apt/sources.list.d/${OS_ID}.sources" ]]; then
-    files+=("/etc/apt/sources.list.d/${OS_ID}.sources")
+  if [[ -f "$APT_ETC_DIR/sources.list.d/${OS_ID}.sources" ]]; then
+    files+=("$APT_ETC_DIR/sources.list.d/${OS_ID}.sources")
   fi
   printf '%s\n' "${files[@]}"
 }
@@ -197,65 +200,67 @@ get_current_mirror() {
   printf 'unknown\n'
 }
 
-replace_mirror_in_file() {
-  local file target_host
-  file="$1"
-  target_host="$2"
+MIRROR_WORKDIR=""
+declare -a MIRROR_SOURCE_FILES=()
+declare -a MIRROR_BACKUP_FILES=()
+declare -a MIRROR_CANDIDATE_FILES=()
 
-  run_as_root python3 - "$file" "$OS_ID" "$target_host" <<'PY'
-import pathlib
-import re
-import sys
-
-path = pathlib.Path(sys.argv[1])
-os_id = sys.argv[2]
-target_host = sys.argv[3]
-text = path.read_text()
-
-if os_id == "ubuntu":
-    pattern = re.compile(r'https?://([^/\s]+)/ubuntu/?')
-
-    def repl(match: re.Match[str]) -> str:
-        host = match.group(1).lower()
-        if host == "security.ubuntu.com":
-            return match.group(0)
-        return f"https://{target_host}/ubuntu/"
-
-elif os_id == "debian":
-    pattern = re.compile(r'https?://([^/\s]+)/debian/?')
-
-    def repl(match: re.Match[str]) -> str:
-        host = match.group(1).lower()
-        if host == "security.debian.org":
-            return match.group(0)
-        return f"https://{target_host}/debian/"
-
-else:
-    raise SystemExit(2)
-
-updated = pattern.sub(repl, text)
-if updated != text:
-    path.write_text(updated)
-PY
+cleanup_mirror_workdir() {
+  if [[ -n "$MIRROR_WORKDIR" && -d "$MIRROR_WORKDIR" ]]; then
+    rm -rf "$MIRROR_WORKDIR"
+  fi
 }
 
-replace_mirror() {
-  local target_host file backup_file
-  local -a files
+prepare_mirror_candidates() {
+  local target_host file backup_file candidate_file index=0
 
   target_host="$1"
-  mapfile -t files < <(get_active_source_files)
+  mapfile -t MIRROR_SOURCE_FILES < <(get_active_source_files)
+  [[ ${#MIRROR_SOURCE_FILES[@]} -gt 0 ]] || die "No active APT source files were found."
 
-  for file in "${files[@]}"; do
+  MIRROR_WORKDIR="$(mktemp -d /tmp/linux-setup-apt-mirror.XXXXXX)"
+  trap cleanup_mirror_workdir EXIT
+  MIRROR_BACKUP_FILES=()
+  MIRROR_CANDIDATE_FILES=()
+
+  for file in "${MIRROR_SOURCE_FILES[@]}"; do
     backup_file="${file}.linux-setup.bak"
     if [[ ! -f "$backup_file" ]]; then
       info "Creating backup: $backup_file"
-      run_as_root cp "$file" "$backup_file"
+      run_as_root cp -a -- "$file" "$backup_file"
     fi
 
-    info "Applying mirror ${target_host} to ${file} (HTTPS)"
-    replace_mirror_in_file "$file" "$target_host"
+    backup_file="$MIRROR_WORKDIR/$index.original"
+    candidate_file="$MIRROR_WORKDIR/$index.candidate"
+    as_root cp -a -- "$file" "$backup_file"
+    as_root cp -a -- "$file" "$candidate_file"
+    render_apt_mirror_candidate "$file" "$candidate_file" "$OS_ID" "$target_host"
+    MIRROR_BACKUP_FILES+=("$backup_file")
+    MIRROR_CANDIDATE_FILES+=("$candidate_file")
+    index=$((index + 1))
   done
+}
+
+apply_mirror_candidates() {
+  local index
+
+  for index in "${!MIRROR_SOURCE_FILES[@]}"; do
+    info "Applying selected mirror to ${MIRROR_SOURCE_FILES[$index]} (HTTPS)"
+    run_as_root cp -a -- "${MIRROR_CANDIDATE_FILES[$index]}" "${MIRROR_SOURCE_FILES[$index]}" || return 1
+  done
+}
+
+restore_mirror_sources() {
+  local index failed=0
+
+  warn "Restoring APT source files from the pre-change copies."
+  for index in "${!MIRROR_SOURCE_FILES[@]}"; do
+    if ! run_as_root cp -a -- "${MIRROR_BACKUP_FILES[$index]}" "${MIRROR_SOURCE_FILES[$index]}"; then
+      failed=1
+    fi
+  done
+
+  return "$failed"
 }
 
 current_host="$(get_current_mirror)"
@@ -312,8 +317,24 @@ EOF
 fi
 
 ensure_sudo_session
-replace_mirror "$target_host"
+prepare_mirror_candidates "$target_host"
+if ! apply_mirror_candidates; then
+  if restore_mirror_sources; then
+    die "Failed to replace the APT mirror; original source files were restored."
+  fi
+  die "Failed to replace the APT mirror and failed to restore the original source files."
+fi
+
 info "Updating APT cache..."
-run_as_root apt-get update -y || warn "Failed to run apt-get update. Please check your network or the new mirror."
+if ! run_as_root apt-get update -y; then
+  if ! restore_mirror_sources; then
+    die "APT metadata refresh failed and the original source files could not be restored."
+  fi
+  info "Refreshing APT cache from the restored source files..."
+  if ! run_as_root apt-get update -y; then
+    die "APT metadata refresh failed; original source files were restored, but their metadata refresh also failed."
+  fi
+  die "APT metadata refresh failed; original source files were restored and their metadata was refreshed."
+fi
 
 info "Successfully switched APT mirror to $target_host."

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 source "$ROOT_DIR/lib/common.sh"
 
 ASSUME_YES=0
@@ -14,10 +14,10 @@ usage() {
 Stage 1:
   - convert the root btrfs layout to @rootfs and @home
   - create a safety snapshot during the conversion
-  - reboot automatically
+  - require verification before a manual reboot
 
 Usage:
-  install-stage1.sh [--apply] [--yes] [-h|--help]
+  manage.sh setup stage1 [--apply] [--yes] [-h|--help]
 
 Options:
   --apply  Run stage 1 (prompts for confirmation unless --yes is given)
@@ -29,7 +29,7 @@ EOF
 confirm_with_text() {
   local answer
   while true; do
-    printf '%s' "Stage 1 will split the Btrfs root layout into @rootfs and @home, create a safety snapshot, and reboot automatically. Continue? [y/N]: "
+    printf '%s' "Stage 1 will split the Btrfs root layout into @rootfs and @home, create a safety snapshot, and require verification before a manual reboot. Continue? [y/N]: "
     read -r answer
     case "$answer" in
       y|Y|yes|YES)
@@ -49,7 +49,7 @@ confirm_stage1() {
   if supports_whiptail_ui; then
     whiptail \
       --title "Linux Setup Stage 1" \
-      --yesno "This will:\n\n- split the Btrfs root layout into @rootfs and @home\n- create a safety snapshot during the conversion\n- reboot automatically\n\nContinue?" \
+      --yesno "This will:\n\n- split the Btrfs root layout into @rootfs and @home\n- create a safety snapshot during the conversion\n- require you to verify the new layout before rebooting\n\nContinue?" \
       15 78
     return
   fi
@@ -84,7 +84,8 @@ if [[ "$RUN_MODE" != "apply" ]]; then
   cat <<EOF
 This was a check run. The flow would execute:
 
-  1. $ROOT_DIR/tasks/system/prepare-btrfs-layout.sh --apply --reboot
+  1. $ROOT_DIR/tasks/system/prepare-btrfs-layout.sh --apply
+  2. Verify the printed layout checks, then reboot manually.
 
 Run with --apply to execute.
 EOF
@@ -102,5 +103,6 @@ if [[ "$ASSUME_YES" -ne 1 ]]; then
   fi
 fi
 
-info "[1/1] Convert root layout and reboot"
-bash "$ROOT_DIR/tasks/system/prepare-btrfs-layout.sh" --apply --reboot
+info "[1/1] Convert root layout"
+bash "$ROOT_DIR/tasks/system/prepare-btrfs-layout.sh" --apply
+info "Stage 1 finished. Verify the printed layout checks, then reboot manually."
