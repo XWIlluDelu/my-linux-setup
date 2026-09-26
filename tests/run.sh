@@ -63,9 +63,11 @@ EOF
   assert_contains 'URIs: https://mirror.example/debian/' "$content"
 
   printf 'URIs: https://security.debian.org/debian-security\n' > "$source_file"
-  if render_apt_mirror_candidate "$source_file" "$candidate_file" debian mirror.example 2>/dev/null; then
-    fail "mirror transform accepted a source file with no replaceable distribution mirror"
-  fi
+  render_apt_mirror_candidate "$source_file" "$candidate_file" debian mirror.example
+  cmp -s "$source_file" "$candidate_file" || fail "security-only source was changed"
+  printf 'URIs: https://deb.debian.org/debian-security\n' > "$source_file"
+  render_apt_mirror_candidate "$source_file" "$candidate_file" debian mirror.example
+  cmp -s "$source_file" "$candidate_file" || fail "deb.debian.org security source was changed"
 }
 
 write_mirror_fakes() {
@@ -306,6 +308,10 @@ test_public_checks() {
 
 main() {
   python3 "$ROOT_DIR/tests/docs.py"
+  python3 "$ROOT_DIR/tests/regressions.py"
+  if command -v node >/dev/null 2>&1; then
+    node "$ROOT_DIR/tests/session-ui.cjs"
+  fi
   test_result_protocol
   test_apt_mirror_transform
   test_apt_mirror_rollback

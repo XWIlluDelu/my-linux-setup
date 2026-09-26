@@ -109,7 +109,7 @@ install_zotero_tarball() {
   record_result zotero "$status" "Installed Zotero ${release_version} from the official tarball and linked it into the user desktop/app path."
 }
 install_zotero() {
-  local installer_path installed_before=0 status
+  local key_path installed_before=0 status
 
   if [[ "$INSTALL_ZOTERO" -eq 0 ]]; then
     return 0
@@ -120,22 +120,25 @@ install_zotero() {
     return 0
   fi
 
-  installer_path="$ASSET_CACHE_DIR/zotero-deb-install.sh"
+  key_path="$ASSET_CACHE_DIR/zotero-archive-keyring.gpg"
   if dpkg_package_installed zotero; then
     installed_before=1
   fi
 
   if ! download_url_with_speed_guard \
-    "https://raw.githubusercontent.com/retorquere/zotero-deb/master/install.sh" \
-    "$installer_path"; then
-    record_result zotero failed "Failed to download the third-party Zotero installer script."
+    "https://raw.githubusercontent.com/retorquere/zotero-pkg/master/zotero-archive-keyring.gpg" \
+    "$key_path"; then
+    record_result zotero failed "Failed to download the Zotero repository signing key."
     return 0
   fi
 
-  if ! as_root bash "$installer_path"; then
-    record_result zotero failed "Failed to run the third-party Zotero installer script."
-    return 0
-  fi
+  # Follow zotero-deb's signed repository contract without executing a remote
+  # setup script as root. Remove its alternate source to avoid Signed-By conflicts.
+  as_root install -D -m 644 "$key_path" /usr/share/keyrings/zotero-archive-keyring.gpg
+  as_root mkdir -p /etc/apt/sources.list.d
+  as_root rm -f /etc/apt/sources.list.d/zotero.sources /etc/apt/trusted.gpg.d/zotero.gpg
+  printf '%s\n' 'deb [signed-by=/usr/share/keyrings/zotero-archive-keyring.gpg by-hash=force] https://zotero.retorque.re/file/apt-package-archive ./' \
+    | as_root tee /etc/apt/sources.list.d/zotero.list >/dev/null
 
   if ! apt_noninteractive update; then
     record_result zotero failed "Failed to refresh package metadata after the Zotero third-party repo install."

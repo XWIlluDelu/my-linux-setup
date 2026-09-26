@@ -1,79 +1,51 @@
 # Claude Code Session Manager
 
-A local web UI for browsing, searching, and managing your [Claude Code](https://claude.ai/code) session history.
+A local browser for Claude Code transcripts under `~/.claude/`. Search titles, project paths and prompt previews; sort by date, project or conversation length; inspect storage use; or delete a session with two-click confirmation. The UI supports Chinese and English.
 
-## What it does
+## Run
 
-Reads from `~/.claude/` and exposes a browsable interface over all recorded sessions:
-
-- **Search** across session titles, project paths, and prompt content
-- **Sort** by recency, title, project, or conversation length
-- **Inspect** any session — view project path, first/last prompts, timestamps, storage size
-- **Delete** sessions with two-step confirmation (removes transcript + runtime sidecars + history entries)
-- **Bilingual UI** — toggles between Chinese and English
-
-## Usage
+Requires Python 3.10+, Bash, `ps`, `seq`, and `nohup`. `lsof` is optional for occupied-port discovery and fallback stopping. No Python or frontend packages are required.
 
 ```bash
-# Start the server
-./run.sh
-
-# Open in browser
+./run.sh --check
+./run.sh --apply
 xdg-open http://127.0.0.1:8765
-
-# Stop the server
-./stop.sh
+./stop.sh --apply
 ```
 
-The server runs on `127.0.0.1:8765` by default. You can override the port, and the host is intended to remain local-only:
+Both wrappers default to `--check`. For foreground execution:
 
 ```bash
-SESSION_MANAGER_PORT=9000 ./run.sh
+python3 session_manager_server.py --serve
 ```
 
-Logs go to `${TMPDIR:-/tmp}/session-manager.log`.
+`--serve` explicitly starts the deletion-capable API. Without it, the Python entry point prints a check summary.
 
-## Requirements
+Set `SESSION_MANAGER_PORT=9000` on both wrappers to use another port. `SESSION_MANAGER_HOST` accepts only `127.0.0.1` or `localhost`. The service checks Host/Origin headers, but has no user authentication: use it only on a trusted local account, not behind a public reverse proxy.
 
-- Python 3.10+
-- Bash with `ps` and `seq` for process management; `lsof` is optional but enables occupied-port discovery and fallback stopping
-- Claude Code installed (data lives in `~/.claude/`)
+PID and log files live at `${XDG_STATE_HOME:-$HOME/.local/state}/claude-session-manager/server.pid` and `server.log`, created with a private umask.
 
-The Python server has no third-party package dependencies; it uses only the standard library.
+## Deletion and recovery
 
-## Architecture
+Stop Claude sessions before deleting their records and keep a backup of `~/.claude/`. A deletion removes:
 
-```
-session_manager_server.py   Python HTTP server + data processing
-session-manager.html        Single-page frontend (vanilla JS, no build step)
-run.sh / stop.sh            Process management scripts
-```
+- the project's transcript JSONL;
+- its session directory, including subagents and tool results;
+- matching runtime sidecars;
+- matching entries in `history.jsonl`.
 
-### API
+The server rejects path-like IDs, ignores symlinked transcripts/directories, and refuses sessions whose runtime sidecar identifies a live process. Requests run serially to avoid concurrent history rewrites. Claude itself does not participate in this serialization; an unrecorded or restarting session can still write files, so close it first.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Serves the UI |
-| `GET` | `/api/sessions` | Returns all sessions as JSON |
-| `DELETE` | `/api/sessions/{id}` | Deletes a session and all associated files |
+Files are staged before rewriting history. If that rewrite fails, they are restored. If restoration also fails, the error names a `~/.claude/claude-session-delete-*` recovery directory; keep it and recover the files manually. Successful deletion is permanent. A failed API request remains visible in the UI rather than being shown as deleted.
 
-### Data sources
+## API and data
 
-The server reads three locations:
+| Method | Path | Action |
+|---|---|---|
+| `GET` | `/` | Serve `session-manager.html` |
+| `GET` | `/api/sessions` | List normalized sessions |
+| `DELETE` | `/api/sessions/{id}` | Delete one session and its associated data |
 
-| Path | Content |
-|------|---------|
-| `~/.claude/projects/**/*.jsonl` | Conversation transcripts |
-| `~/.claude/history.jsonl` | Structured session metadata index |
-| `~/.claude/sessions/*.json` | Runtime sidecar files (cwd, pid, entrypoint) |
+Transcripts are read from `~/.claude/projects/<project>/*.jsonl`, history from `~/.claude/history.jsonl`, and runtime metadata from `~/.claude/sessions/*.json`. These are Claude Code's internal file formats, not a stable public API.
 
-### Session title resolution
-
-Titles are resolved in priority order:
-
-1. **`explicit:ai-title`** — AI-generated title from `ai-title` record in transcript
-2. **`derived:first-prompt`** — First qualifying user message (truncated to 72 chars)
-3. **`derived:slug`** — Session slug from transcript metadata
-4. **`derived:session-id`** — Fallback: `Session <first 8 chars of ID>`
-
-The frontend shows a small badge (`ai` vs `derived`) next to each title.
+Titles prefer `ai-title`, then the first qualifying user message, then a slug, then the session ID. Storage totals include transcript bytes and the session directory once; subagent totals are a breakdown, not additional bytes.

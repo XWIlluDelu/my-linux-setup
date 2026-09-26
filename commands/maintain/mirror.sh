@@ -171,7 +171,9 @@ get_active_source_files() {
   if [[ -f "$APT_ETC_DIR/sources.list.d/${OS_ID}.sources" ]]; then
     files+=("$APT_ETC_DIR/sources.list.d/${OS_ID}.sources")
   fi
-  printf '%s\n' "${files[@]}"
+  if [[ ${#files[@]} -gt 0 ]]; then
+    printf '%s\n' "${files[@]}"
+  fi
 }
 
 get_current_mirror() {
@@ -213,17 +215,25 @@ cleanup_mirror_workdir() {
 
 prepare_mirror_candidates() {
   local target_host file backup_file candidate_file index=0
+  local -a source_files
 
   target_host="$1"
-  mapfile -t MIRROR_SOURCE_FILES < <(get_active_source_files)
-  [[ ${#MIRROR_SOURCE_FILES[@]} -gt 0 ]] || die "No active APT source files were found."
+  mapfile -t source_files < <(get_active_source_files)
+  [[ ${#source_files[@]} -gt 0 ]] || die "No active APT source files were found."
+  MIRROR_SOURCE_FILES=()
 
   MIRROR_WORKDIR="$(mktemp -d /tmp/linux-setup-apt-mirror.XXXXXX)"
   trap cleanup_mirror_workdir EXIT
   MIRROR_BACKUP_FILES=()
   MIRROR_CANDIDATE_FILES=()
 
-  for file in "${MIRROR_SOURCE_FILES[@]}"; do
+  for file in "${source_files[@]}"; do
+    candidate_file="$MIRROR_WORKDIR/$index.candidate"
+    render_apt_mirror_candidate "$file" "$candidate_file" "$OS_ID" "$target_host"
+    if as_root cmp -s -- "$file" "$candidate_file"; then
+      continue
+    fi
+
     backup_file="${file}.linux-setup.bak"
     if [[ ! -f "$backup_file" ]]; then
       info "Creating backup: $backup_file"
@@ -231,10 +241,9 @@ prepare_mirror_candidates() {
     fi
 
     backup_file="$MIRROR_WORKDIR/$index.original"
-    candidate_file="$MIRROR_WORKDIR/$index.candidate"
     as_root cp -a -- "$file" "$backup_file"
-    as_root cp -a -- "$file" "$candidate_file"
-    render_apt_mirror_candidate "$file" "$candidate_file" "$OS_ID" "$target_host"
+    as_root chmod --reference="$file" "$candidate_file"
+    MIRROR_SOURCE_FILES+=("$file")
     MIRROR_BACKUP_FILES+=("$backup_file")
     MIRROR_CANDIDATE_FILES+=("$candidate_file")
     index=$((index + 1))
@@ -297,11 +306,6 @@ else
   fi
 fi
 
-if [[ "$current_host" == "$target_host" ]]; then
-  info "System is already using target mirror: $target_host. Nothing to do."
-  exit 0
-fi
-
 if [[ "$APPLY" -ne 1 ]]; then
   cat <<EOF
 
@@ -318,6 +322,10 @@ fi
 
 ensure_sudo_session
 prepare_mirror_candidates "$target_host"
+if [[ ${#MIRROR_SOURCE_FILES[@]} -eq 0 ]]; then
+  info "No distribution mirror URLs need changing; security and unrelated sources are unchanged."
+  exit 0
+fi
 if ! apply_mirror_candidates; then
   if restore_mirror_sources; then
     die "Failed to replace the APT mirror; original source files were restored."
@@ -326,12 +334,12 @@ if ! apply_mirror_candidates; then
 fi
 
 info "Updating APT cache..."
-if ! run_as_root apt-get update -y; then
+if ! run_as_root apt-get -o APT::Update::Error-Mode=any update; then
   if ! restore_mirror_sources; then
     die "APT metadata refresh failed and the original source files could not be restored."
   fi
   info "Refreshing APT cache from the restored source files..."
-  if ! run_as_root apt-get update -y; then
+  if ! run_as_root apt-get -o APT::Update::Error-Mode=any update; then
     die "APT metadata refresh failed; original source files were restored, but their metadata refresh also failed."
   fi
   die "APT metadata refresh failed; original source files were restored and their metadata was refreshed."

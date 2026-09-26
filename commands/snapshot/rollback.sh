@@ -41,11 +41,9 @@ ROLLBACK_INITRD_PATH=""
 SNAPSHOT_ROWS=""
 
 cleanup() {
-  if [[ -n "${TOP_MNT:-}" ]] && mountpoint -q "$TOP_MNT" 2>/dev/null; then
-    as_root umount "$TOP_MNT" || true
+  if [[ -n "${WORKDIR:-}" ]]; then
+    cleanup_mount_workdir "$WORKDIR" "$TOP_MNT"
   fi
-
-  [[ -n "${WORKDIR:-}" ]] && rm -rf "$WORKDIR"
   return 0
 }
 trap cleanup EXIT
@@ -351,9 +349,30 @@ install_grub_snapshot_boot_entry() {
   custom_cfg="${ROLLBACK_BOOT_DIR}/grub/custom.cfg"
 
   run_as_root mkdir -p "$(dirname "$custom_cfg")"
-  run_as_root bash -c "cat > $(printf '%q' "$custom_cfg")" <<< "# Managed by linux-setup rollback
-${ROLLBACK_CUSTOM_CFG_CONTENT}
-"
+  # Keep unrelated user menu entries; replace only this tool's marked block.
+  as_root python3 - "$custom_cfg" "$ROLLBACK_CUSTOM_CFG_CONTENT" <<'PY'
+import os
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+path = Path(sys.argv[1])
+old = path.read_text() if path.exists() else ""
+start, end = "# BEGIN linux-setup rollback", "# END linux-setup rollback"
+if old.count(start) != old.count(end) or old.count(start) > 1:
+    raise SystemExit("Malformed linux-setup block in GRUB custom.cfg; repair it before retrying")
+content = re.sub(r"(?ms)^# BEGIN linux-setup rollback\n.*?^# END linux-setup rollback\n?", "", old)
+content = content.rstrip() + "\n\n" + start + "\n" + sys.argv[2] + "\n" + end + "\n"
+fd, name = tempfile.mkstemp(prefix=".custom-", dir=path.parent)
+try:
+    with os.fdopen(fd, "w") as output:
+        os.fchmod(output.fileno(), path.stat().st_mode & 0o777 if path.exists() else 0o644)
+        output.write(content)
+    os.replace(name, path)
+finally:
+    Path(name).unlink(missing_ok=True)
+PY
   info "Installed rollback GRUB entry at ${custom_cfg}"
 }
 
@@ -407,7 +426,13 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+[[ "$CONFIG_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] || die "Invalid snapper config name."
+if [[ -n "$SNAPSHOT" ]]; then
+  [[ "$SNAPSHOT" =~ ^[1-9][0-9]*$ ]] || die "--snapshot must be a positive snapshot number."
+fi
 ensure_command snapper
+require_btrfs_root
+mountpoint -q /boot && die "Rollback boot entries require /boot inside the root subvolume."
 
 if [[ -z "$SNAPSHOT" ]]; then
   info "Available snapshots:"
@@ -445,8 +470,21 @@ EOF
 fi
 
 ensure_sudo_session
+ensure_command grub-reboot
+ensure_command grub-probe
+ensure_command python3
+as_root grep -Eq '^SUBVOLUME="/"$' "/etc/snapper/configs/$CONFIG_NAME" \
+  || die "Rollback requires a snapper config for /."
 load_snapshot_rows
 collect_snapshot_interactively
+[[ "$SNAPSHOT" =~ ^[1-9][0-9]*$ ]] || die "Snapshot 0 is the live root, not a rollback target."
+snapshot_exists_in_rows "$SNAPSHOT" || die "Snapshot $SNAPSHOT was not found."
+# Reject snapshots without usable boot artifacts before snapper changes the default.
+as_root test -d "/.snapshots/$SNAPSHOT/snapshot/boot" || die "Snapshot has no /boot directory."
+kernel_name="$(as_root find "/.snapshots/$SNAPSHOT/snapshot/boot" -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%f\n' | sort -V | tail -n 1)"
+[[ -n "$kernel_name" ]] || die "Snapshot has no kernel image."
+as_root test -f "/.snapshots/$SNAPSHOT/snapshot/boot/initrd.img-${kernel_name#vmlinuz-}" \
+  || die "Snapshot has no matching initramfs."
 collect_auto_reboot_choice
 confirm_rollback_action || die "Rollback cancelled."
 info "Rollback target snapshot: $SNAPSHOT"

@@ -9,7 +9,7 @@ deploy_managed_ghostty_config() {
   config_dir="$TARGET_HOME/.config/ghostty"
   target_config="$config_dir/config"
 
-  run_as_target_user "$TARGET_USER" "$TARGET_HOME" mkdir -p "$config_dir"
+  run_as_target_user "$TARGET_USER" "$TARGET_HOME" mkdir -p "$config_dir" || return 1
   run_as_target_user "$TARGET_USER" "$TARGET_HOME" install -m 644 "$GHOSTTY_CONFIG_ASSET" "$target_config"
 }
 ghostty_release_selector() {
@@ -207,7 +207,7 @@ install_ghostty() {
 
   case "$selector_kind" in
     debian)
-      debian_regex="ghostty_.*\\+${selector_value}_${ARCH}\\.deb$"
+      debian_regex="^ghostty_.*[.+]${selector_value}_${ARCH}\\.deb$"
       if install_ghostty_from_release \
         "dariogriffo/ghostty-debian" \
         "$debian_regex" \

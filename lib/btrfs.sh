@@ -2,6 +2,27 @@
 
 # Btrfs layout discovery and capacity calculations.
 
+# Never recursively remove a directory that may still contain a live mount.
+cleanup_mount_workdir() {
+  local workdir mount_dir failed=0
+  workdir="$1"
+  shift
+  for mount_dir in "$@"; do
+    if mountpoint -q "$mount_dir"; then
+      if ! as_root umount "$mount_dir"; then
+        warn "Could not unmount $mount_dir; leaving $workdir intact."
+        failed=1
+      fi
+    fi
+  done
+  if [[ "$failed" -eq 0 ]]; then
+    for mount_dir in "$@"; do
+      rmdir -- "$mount_dir" 2>/dev/null || true
+    done
+    rmdir -- "$workdir" 2>/dev/null || true
+  fi
+}
+
 btrfs_layout_required_kib() {
   local mode copied_kib
   mode="$1"

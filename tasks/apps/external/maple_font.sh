@@ -76,8 +76,9 @@ install_maple_font() {
   fi
 
   if ! mv "$staged_font_dir" "$FONT_DEST_DIR"; then
-    if [[ -d "$backup_dir/current" ]]; then
-      mv "$backup_dir/current" "$FONT_DEST_DIR" || true
+    if [[ -d "$backup_dir/current" ]] && ! mv "$backup_dir/current" "$FONT_DEST_DIR"; then
+      record_result maple_font failed "Failed to install or restore Maple Font; recover the previous directory from ${backup_dir}/current."
+      return 0
     fi
     rm -rf "$work_dir"
     record_result maple_font failed "Failed to replace the existing Maple Font directory."

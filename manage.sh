@@ -76,7 +76,7 @@ dispatch() {
           ;;
         -*|--*)
           shift
-          exec "$ROOT_DIR/commands/update/all.sh" "$action" "$@"
+          exec "$ROOT_DIR/commands/update/all.sh" "$@"
           ;;
         all)
           shift 2

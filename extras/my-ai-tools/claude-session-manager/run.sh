@@ -2,16 +2,31 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$ROOT_DIR/session-manager.pid"
-LOG_FILE="${TMPDIR:-/tmp}/session-manager.log"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-session-manager"
+PID_FILE="$STATE_DIR/server.pid"
+LOG_FILE="$STATE_DIR/server.log"
 HOST="${SESSION_MANAGER_HOST:-127.0.0.1}"
 PORT="${SESSION_MANAGER_PORT:-8765}"
 PROBE_HOST="$HOST"
 SCRIPT_PATH="$ROOT_DIR/session_manager_server.py"
 
-if [[ "$PROBE_HOST" == "0.0.0.0" ]]; then
-  PROBE_HOST="127.0.0.1"
+APPLY=0
+for arg in "$@"; do
+  case "$arg" in
+    --check) APPLY=0 ;;
+    --apply) APPLY=1 ;;
+    -h|--help) printf 'Usage: run.sh [--check|--apply]\n'; exit 0 ;;
+    *) printf 'Unknown argument: %s\n' "$arg" >&2; exit 1 ;;
+  esac
+done
+[[ "$HOST" == 127.0.0.1 || "$HOST" == localhost ]] || { printf 'Only loopback hosts are supported.\n' >&2; exit 1; }
+[[ "$PORT" =~ ^[0-9]{1,5}$ ]] && ((10#$PORT > 0 && 10#$PORT < 65536)) || { printf 'Invalid port.\n' >&2; exit 1; }
+if [[ "$APPLY" -ne 1 ]]; then
+  printf '[check] Would start the deletion-capable UI at http://%s:%s; state: %s\n' "$HOST" "$PORT" "$STATE_DIR"
+  exit 0
 fi
+umask 077
+mkdir -p "$STATE_DIR"
 
 get_listener_pid() {
   local listener_pid
@@ -21,7 +36,7 @@ get_listener_pid() {
 
 is_session_manager_pid() {
   local candidate_pid="$1"
-  if [[ -z "$candidate_pid" ]] || ! kill -0 "$candidate_pid" 2>/dev/null; then
+  if [[ ! "$candidate_pid" =~ ^[1-9][0-9]*$ ]] || ! kill -0 "$candidate_pid" 2>/dev/null; then
     return 1
   fi
 
@@ -51,7 +66,7 @@ if [[ -n "$listener_pid" ]]; then
   exit 1
 fi
 
-python3 "$ROOT_DIR/session_manager_server.py" > "$LOG_FILE" 2>&1 &
+nohup python3 "$ROOT_DIR/session_manager_server.py" --serve > "$LOG_FILE" 2>&1 < /dev/null &
 server_pid=$!
 printf '%s' "$server_pid" > "$PID_FILE"
 

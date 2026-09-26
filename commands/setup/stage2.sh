@@ -351,6 +351,7 @@ run_stage2_preflight() {
   preflight_reset
   preflight_check_supported_apt_distro
   preflight_check_btrfs_root
+  preflight_check_stage1_layout
   preflight_check_sudo_access
   preflight_check_apt_locks
   preflight_check_root_free_space 2097152 4194304 "Stage 2"

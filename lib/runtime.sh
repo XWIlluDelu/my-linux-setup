@@ -2,7 +2,8 @@
 
 # Command execution, privilege, target-user, and terminal primitives.
 
-APPLY="${APPLY:-0}"
+# An inherited environment variable must not authorize mutation.
+APPLY=0
 
 info() {
   printf '[INFO] %s\n' "$*"

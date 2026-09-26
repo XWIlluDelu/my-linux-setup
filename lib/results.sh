@@ -8,6 +8,9 @@ record_result() {
   status="$2"
   message="${3:-}"
 
+  if [[ "$status" == failed ]]; then
+    printf '[WARN] [%s] %s\n' "$step" "$message" >&2
+  fi
   [[ -n "${LINUX_SETUP_RESULT_LOG:-}" ]] || return 0
 
   message="${message//$'\t'/ }"

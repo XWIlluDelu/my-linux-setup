@@ -27,6 +27,7 @@ GHOSTTY_INSTALL_STATUS=""
 GHOSTTY_INSTALL_MESSAGE=""
 PKG_MANAGER=""
 FLATPAK_BASE_READY=0
+RESULT_LOG_OWNED=0
 
 INSTALL_FLATPAK=0
 INSTALL_WECHAT=0
@@ -40,6 +41,9 @@ INSTALL_MINIFORGE=0
 cleanup() {
   if [[ -n "${TMP_DIR:-}" && -d "${TMP_DIR:-}" ]]; then
     rm -rf "$TMP_DIR"
+  fi
+  if [[ "$RESULT_LOG_OWNED" -eq 1 ]]; then
+    rm -f "$LINUX_SETUP_RESULT_LOG"
   fi
 }
 trap cleanup EXIT
@@ -83,11 +87,17 @@ parse_bool() {
 }
 
 run_optional_external_step() {
-  local step_id func_name
+  local step_id func_name rc
   step_id="$1"
   func_name="$2"
 
-  if ! ( set +e; "$func_name" ); then
+  # A function called from `if`/`!` ignores errexit throughout its body.
+  # Run an untested subshell instead, so an unhandled failure stops that app.
+  set +e
+  ( set -e; RESULT_LOG_OWNED=0; trap cleanup EXIT; "$func_name" )
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]]; then
     warn "[${step_id}] Managed app step exited unexpectedly."
     record_result "$step_id" failed "The ${step_id} managed app step exited unexpectedly."
   fi
@@ -146,6 +156,7 @@ selected_external_steps_need_sudo() {
 installed_version_or_empty() {
   local package_name
   package_name="$1"
+  dpkg_package_installed "$package_name" || return 0
   dpkg-query -W -f='${Version}\n' "$package_name" 2>/dev/null || true
 }
 
@@ -437,11 +448,16 @@ if [[ "$(id -un)" != "$TARGET_USER" ]]; then
 fi
 
 if selected_external_steps_need_sudo; then
-  ensure_command sudo
   ensure_sudo_session
 fi
 mkdir -p "$DEB_CACHE_DIR" "$ASSET_CACHE_DIR"
 
+if [[ -z "${LINUX_SETUP_RESULT_LOG:-}" ]]; then
+  LINUX_SETUP_RESULT_LOG="$(mktemp)"
+  RESULT_LOG_OWNED=1
+fi
+
+INITIAL_FAILURES="$(result_failed_count)"
 record_disabled_results
 
 run_optional_external_step flatpak install_flatpak_stack
@@ -452,3 +468,8 @@ run_optional_external_step obsidian install_obsidian
 run_optional_external_step ghostty install_ghostty
 run_optional_external_step maple_font install_maple_font
 run_optional_external_step miniforge install_miniforge
+
+if [[ "$(result_failed_count)" -gt "$INITIAL_FAILURES" ]]; then
+  warn "One or more managed apps failed; see the component results above."
+  exit 1
+fi

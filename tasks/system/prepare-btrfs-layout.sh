@@ -61,6 +61,8 @@ SAFETY_SNAPSHOT="@old-before-layout-$STAMP"
 
 [[ "$ROOT_FSTYPE" == "btrfs" ]] || die "Root filesystem is '$ROOT_FSTYPE', not btrfs."
 [[ -n "$ROOT_UUID" ]] || die "Unable to determine UUID of the root filesystem."
+mountpoint -q /boot && die "A separate /boot is not supported by this snapshot boot layout."
+[[ ! -L /home ]] || die "A symlinked /home is not supported."
 
 if [[ -n "$HOME_SRC" && "$HOME_SRC" != "$ROOT_SRC" ]]; then
   die "/home is mounted from a separate source: $HOME_SRC"
@@ -187,19 +189,7 @@ cleanup() {
   if [[ -n "${FSTAB_TMP:-}" && -f "${FSTAB_TMP:-}" ]]; then
     rm -f "$FSTAB_TMP"
   fi
-  if mountpoint -q "$SAFETY_MNT" 2>/dev/null; then
-    as_root umount "$SAFETY_MNT" || true
-  fi
-  if mountpoint -q "$NEWHOME_MNT" 2>/dev/null; then
-    as_root umount "$NEWHOME_MNT" || true
-  fi
-  if mountpoint -q "$NEWROOT_MNT" 2>/dev/null; then
-    as_root umount "$NEWROOT_MNT" || true
-  fi
-  if mountpoint -q "$TOP_MNT" 2>/dev/null; then
-    as_root umount "$TOP_MNT" || true
-  fi
-  rm -rf "$WORKDIR"
+  cleanup_mount_workdir "$WORKDIR" "$SAFETY_MNT" "$NEWHOME_MNT" "$NEWROOT_MNT" "$TOP_MNT"
 }
 trap cleanup EXIT
 
@@ -210,6 +200,7 @@ if [[ "$MODE" == "split-home-from-existing-rootfs" ]]; then
   [[ ! -e "$TOP_MNT/$HOME_SUBVOL" ]] || die "Detected existing $HOME_SUBVOL in the btrfs top-level. Refusing to continue."
 
   run_as_root btrfs subvolume snapshot -r "$TOP_MNT/$ROOT_SUBVOL" "$TOP_MNT/$SAFETY_SNAPSHOT"
+  run_as_root mount -o "$(with_subvol_opt "$ROOT_OPTS" "$ROOT_SUBVOL")" "$ROOT_DEV" "$NEWROOT_MNT"
   run_as_root btrfs subvolume create "$TOP_MNT/$HOME_SUBVOL"
   run_as_root mount -o "$(with_subvol_opt "$ROOT_OPTS" "$HOME_SUBVOL")" "$ROOT_DEV" "$NEWHOME_MNT"
 
@@ -221,9 +212,8 @@ else
     die "Detected existing $ROOT_SUBVOL or $HOME_SUBVOL in the btrfs top-level. Refusing to continue."
   fi
 
-  # The top-level btrfs subvolume (subvolid=5) cannot be snapshotted directly.
-  # For flat roots, keep an equivalent safety backup by rsyncing into a dedicated
-  # subvolume before layout conversion.
+  # Keep the existing independent-copy strategy for flat roots. Exclude the
+  # destination's top-level alias as well as its temporary mount to avoid recursion.
   run_as_root btrfs subvolume create "$TOP_MNT/$SAFETY_SNAPSHOT"
   run_as_root mount -o "$(with_subvol_opt "$ROOT_OPTS" "$SAFETY_SNAPSHOT")" "$ROOT_DEV" "$SAFETY_MNT"
   run_as_root rsync -aAXH --numeric-ids \
@@ -236,6 +226,7 @@ else
     --exclude='/media/*' \
     --exclude='/lost+found' \
     --exclude='/.snapshots/*' \
+    --exclude="/$SAFETY_SNAPSHOT" \
     / "$SAFETY_MNT/"
   run_as_root umount "$SAFETY_MNT"
   run_as_root btrfs subvolume create "$TOP_MNT/$ROOT_SUBVOL"
@@ -305,6 +296,11 @@ if [[ "$MODE" == "flat-root-to-rootfs-home" ]]; then
 fi
 rebuild_initramfs_if_possible
 rebuild_grub_if_possible
+if [[ "$MODE" == "flat-root-to-rootfs-home" ]]; then
+  # The running root still owns /boot until reboot. Carry rebuilt initramfs and
+  # GRUB files into the new root, rather than booting its pre-rebuild copies.
+  run_as_root rsync -aAXH --numeric-ids /boot/ "$NEWROOT_MNT/boot/"
+fi
 
 info "Layout conversion finished."
 info "Please manually verify: findmnt /, findmnt /home, btrfs subvolume list /, /etc/fstab"

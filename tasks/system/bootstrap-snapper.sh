@@ -39,7 +39,7 @@ ensure_snapshots_mount() {
   current_source="$(findmnt -nro SOURCE /.snapshots 2>/dev/null || true)"
   if [[ "$current_source" != "$desired_source" ]]; then
     if mountpoint -q /.snapshots 2>/dev/null; then
-      try_run_as_root umount /.snapshots
+      run_as_root umount /.snapshots
     fi
     run_as_root mount -o "$(with_subvol_opt "$root_opts" "$snapshots_subvol")" "$root_dev" /.snapshots
   fi
@@ -85,6 +85,8 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+[[ "$CONFIG_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] || die "Invalid snapper config name."
+[[ "$SUBVOLUME" == / ]] || die "This bootstrap manages only the root subvolume (/)."
 require_btrfs_root
 
 info "Config name: $CONFIG_NAME"
@@ -139,6 +141,8 @@ if [[ ! -f "/etc/snapper/configs/$CONFIG_NAME" ]]; then
   run_as_root sed -i "s/^NUMBER_LIMIT=.*\$/NUMBER_LIMIT=\"$NUM_LIMIT\"/" "/etc/snapper/configs/$CONFIG_NAME"
   run_as_root sed -i "s/^NUMBER_LIMIT_IMPORTANT=.*\$/NUMBER_LIMIT_IMPORTANT=\"$NUM_LIMIT_IMPORTANT\"/" "/etc/snapper/configs/$CONFIG_NAME"
 else
+  as_root grep -Eq '^SUBVOLUME="/"$' "/etc/snapper/configs/$CONFIG_NAME" \
+    || die "Existing snapper config '$CONFIG_NAME' does not target /."
   info "Snapper config already exists: /etc/snapper/configs/$CONFIG_NAME"
 fi
 

@@ -171,6 +171,15 @@ preflight_check_btrfs_root() {
     preflight_fail "Root filesystem is '${fstype:-unknown}', but this workflow expects btrfs."
   fi
 }
+preflight_check_stage1_layout() {
+  if [[ "$(stable_root_subvol_path)" != @rootfs || "$(findmnt -nro FSROOT /home 2>/dev/null)" != /@home ]]; then
+    preflight_fail "Stage 2 requires the booted @rootfs + @home layout. Complete Stage 1, verify it, and reboot first."
+  elif mountpoint -q /boot; then
+    preflight_fail "Snapshot boot switching requires /boot inside the root subvolume."
+  else
+    preflight_ok "Stage 1 root/home layout is mounted."
+  fi
+}
 preflight_check_sudo_access() {
   if [[ "$EUID" -eq 0 ]]; then
     preflight_ok "Running as root."
@@ -250,8 +259,9 @@ preflight_check_network_access() {
     if url_reachable "$url"; then
       preflight_ok "${label} reachable via ${url}"
       return
+    else
+      rc="$?"
     fi
-    rc="$?"
     if [[ "$rc" -ne 2 ]]; then
       unsupported=0
     fi
@@ -272,8 +282,9 @@ preflight_check_optional_network_access() {
     if url_reachable "$url"; then
       preflight_ok "${label} reachable via ${url}"
       return
+    else
+      rc="$?"
     fi
-    rc="$?"
     if [[ "$rc" -ne 2 ]]; then
       unsupported=0
     fi

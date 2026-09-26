@@ -4,6 +4,9 @@
 
 apt_noninteractive() {
   ensure_command apt-get
+  if [[ "${1:-}" == update ]]; then
+    set -- -o APT::Update::Error-Mode=any "$@"
+  fi
 
   if [[ "$EUID" -eq 0 ]]; then
     env \
@@ -25,7 +28,7 @@ apt_noninteractive() {
 }
 dpkg_package_installed() {
   command_exists dpkg-query || return 1
-  dpkg-query -W -f='${Status}\n' "$1" 2>/dev/null | grep -q 'install ok installed'
+  dpkg-query -W -f='${db:Status-Status}\n' "$1" 2>/dev/null | grep -qx 'installed'
 }
 linux_setup_package_arch() {
   local machine_arch
@@ -113,9 +116,6 @@ supports_debian_apt_workflow() {
   detect_os_release
   [[ "${DISTRO_ID:-unknown}" == "ubuntu" || "${DISTRO_ID:-unknown}" == "debian" ]]
 }
-prepare_pacman_keyring() {
-  as_root pacman -Sy --needed --noconfirm archlinux-keyring
-}
 refresh_package_metadata() {
   local pm
   pm="$(detect_pkg_manager)" || die "No supported package manager detected. Supported: apt, dnf, zypper, pacman."
@@ -131,8 +131,7 @@ refresh_package_metadata() {
       as_root zypper refresh
       ;;
     pacman)
-      prepare_pacman_keyring
-      as_root pacman -Sy --noconfirm
+      info "pacman metadata will be refreshed together with the full upgrade/install transaction."
       ;;
     *)
       die "Unsupported package manager: $pm"
@@ -154,7 +153,6 @@ full_system_upgrade() {
       as_root zypper update -y
       ;;
     pacman)
-      prepare_pacman_keyring
       as_root pacman -Syu --noconfirm
       ;;
     *)
@@ -166,12 +164,12 @@ install_packages() {
   local pm
   pm="$(detect_pkg_manager)" || {
     warn "No supported package manager detected. Please install manually: $*"
-    return 0
+    return 1
   }
 
   case "$pm" in
     apt-get)
-      apt_noninteractive update
+      apt_noninteractive update || return 1
       apt_noninteractive install -y "$@"
       ;;
     dnf)
@@ -181,8 +179,7 @@ install_packages() {
       as_root zypper install -y "$@"
       ;;
     pacman)
-      prepare_pacman_keyring
-      as_root pacman -Sy --needed --noconfirm "$@"
+      as_root pacman -Syu --needed --noconfirm "$@"
       ;;
     *)
       die "Unsupported package manager: $pm"

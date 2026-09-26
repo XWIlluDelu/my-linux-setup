@@ -6,4 +6,4 @@ Main document:
 
 - [English](PTB-Install-Notes-EN.md)
 
-The document targets agents and keeps the currently most useful installation decisions, key commands, config file locations, and common failure conclusions.
+The notes preserve a tested workstation configuration and its limitations. They distinguish reproducing that pinned setup from choosing a current PTB version or validating an experiment's timing.

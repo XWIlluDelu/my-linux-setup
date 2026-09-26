@@ -112,8 +112,11 @@ def check_bundled_tool_docs() -> None:
     for requirement in ("lsof", "ps", "seq"):
         if f"`{requirement}`" not in session_readme:
             fail(f"Claude Session Manager README omits runtime tool {requirement}")
-    if "${TMPDIR:-/tmp}/session-manager.log" not in session_readme:
-        fail("Claude Session Manager README omits its TMPDIR-aware log path")
+    if "${XDG_STATE_HOME:-$HOME/.local/state}/claude-session-manager/server.pid" not in session_readme:
+        fail("Claude Session Manager README omits its user-private state path")
+    for command in ("./run.sh --apply", "./stop.sh --apply", "session_manager_server.py --serve"):
+        if command not in session_readme:
+            fail(f"Claude Session Manager README omits explicit execution mode: {command}")
 
 
 def main() -> None:
