@@ -1,6 +1,6 @@
 # my-linux-setup
 
-A reproducible setup for one Linux workstation. Users normally run only the Stage 1 and Stage 2 commands; maintenance commands and post-install notes remain available for later inspection. Default repo path: `~/my-linux-setup`.
+Personal Linux workstation setup and maintenance scripts. The main setup is a two-stage Debian/Ubuntu + Btrfs workflow; individual app tasks and optional tools can also be used separately. Examples assume a checkout at `~/my-linux-setup`.
 
 ## Safety model
 
@@ -16,11 +16,11 @@ bash ~/my-linux-setup/manage.sh --help
 bash ~/my-linux-setup/manage.sh check
 ```
 
-Running `manage.sh` with no arguments opens an interactive menu; with arguments it dispatches by subcommand. Run `bash tests/run.sh` to verify the repository's non-mutating contracts.
+Running `manage.sh` with no arguments opens an interactive menu; with arguments it dispatches by subcommand. `check` previews the flows and fetches live NVIDIA metadata. For offline verification, run `bash tests/run.sh`.
 
 | Command | Action |
 |---|---|
-| `setup stage1` | Convert Btrfs root to `@rootfs` + `@home`, create a safety snapshot, then stop for verification |
+| `setup stage1` | Convert Btrfs root to `@rootfs` + `@home`, create a safety copy/snapshot, then stop for verification |
 | `setup stage2` | After reboot, initialize snapper, remove snap, upgrade the system, install selected components, cleanup |
 | `update` / `update all` | Update system packages, refresh detected managed apps and shell components, cleanup |
 | `update packages` | Run only the system package upgrade |
@@ -45,17 +45,15 @@ Running `manage.sh` with no arguments opens an interactive menu; with arguments 
 | `extras/` | Post-install configuration records, fixes, and optional tools; never run automatically |
 | `tests/` | Non-mutating command, failure-path, and helper contracts |
 
-A coding agent should begin with `manage.sh`, follow the selected handler under `commands/`, and descend into `tasks/` only for implementation details. Optional work such as `fcitx5-vinput` starts under `extras/` after the base installation.
-
 ## Setup flow
 
-Stage 1: run only on a fresh install, after confirming root is Btrfs and `/home` is not a separate mount.
+Stage 1 supports a top-level Btrfs root or an existing `@rootfs`, with `/home` still inside root and `/boot` not separately mounted. Other layouts, including an existing `@` root, need manual preparation. Use a fresh, idle installation and keep an external backup: the safety copy/snapshot is on the same filesystem, not a disk-failure backup.
 
 ```bash
 bash ~/my-linux-setup/manage.sh setup stage1 --apply
 ```
 
-Stage 1 checks capacity before copying data and stops before rebooting. Verify its reported `findmnt`, subvolume, and `/etc/fstab` checks, reboot manually, then run Stage 2:
+Stage 1 checks capacity before copying data and stops before rebooting. Verify the generated `/etc/fstab`, Btrfs default subvolume, and boot files, then reboot manually. Confirm `/` is `@rootfs` and `/home` is `@home` with `findmnt /` and `findmnt /home` before choosing **one** Stage 2 profile:
 
 ```bash
 bash ~/my-linux-setup/manage.sh setup stage2 --apply --profile desktop
@@ -96,7 +94,7 @@ Refresh managed apps and shell components:
 bash ~/my-linux-setup/manage.sh update apps --apply
 ```
 
-`update apps` first detects the current managed state: desktop essentials, Edge, VS Code, Flatpak, WeChat, Clash Verge Rev, Zotero, Obsidian, Ghostty, Maple Font, Miniforge, and the shell environment are selected by default; with a TTY present you can add or remove items interactively. `--yes` applies the detection result without prompting.
+`update apps` selects components it detects as installed or managed: desktop essentials, Edge, VS Code, Flatpak, WeChat, Clash Verge Rev, Zotero, Obsidian, Ghostty, Maple Font, Miniforge, and the shell environment. With a TTY present you can add or remove items interactively. `--yes` applies the detection result without prompting.
 
 Repair package state:
 
@@ -112,7 +110,7 @@ bash ~/my-linux-setup/manage.sh maintain mirror --auto
 bash ~/my-linux-setup/manage.sh maintain mirror --reset
 ```
 
-Mirror changes keep the original source files, validate the selected mirror with `apt-get update`, and restore both sources and metadata if validation fails.
+Mirror changes cover `/etc/apt/sources.list` and the distro's `debian.sources` or `ubuntu.sources`. Security repositories and unrelated sources stay unchanged. The command backs up changed sources, rejects partial APT refresh failures, and restores the original sources on failure; it also attempts to refresh metadata from the restored sources.
 
 ## Shell config boundaries
 
@@ -127,7 +125,7 @@ Managed configuration and state:
 - `~/.local/state/linux-setup/shell-env-profile`
 - `~/.local/state/linux-setup/shell-env.env`
 
-A sync also removes `~/.tmux.conf` only when its first line is the legacy marker `# Linux Setup tmux config`; unrelated tmux files are untouched.
+Fresh shell setup and `shell sync` back up existing shell configuration under `~/.local/state/linux-setup/backups/shell-<timestamp>-<pid>/` before overwriting it. Fresh setup also replaces the managed Zinit checkout and Starship binary; normal shell updates preserve configuration. A sync removes `~/.tmux.conf` only when its first line is the legacy marker `# Linux Setup tmux config`; unrelated tmux files are untouched.
 
 Rewrite the managed shell files and state:
 
@@ -145,7 +143,7 @@ bash ~/my-linux-setup/manage.sh snapshot create --apply
 bash ~/my-linux-setup/manage.sh snapshot rollback --apply --snapshot <N>
 ```
 
-`rollback` reboots by default; to only create the rollback target without rebooting, pass `--no-reboot`.
+`rollback` requires a root snapper configuration, a positive snapshot number, GRUB, and a kernel/initramfs inside the snapshot. A separate `/boot` is not supported. `/home` remains unchanged when mounted from `@home`. The command preserves unrelated entries in `grub/custom.cfg` and reboots by default; pass `--no-reboot` to inspect the prepared target first.
 
 ## NVIDIA
 
@@ -156,7 +154,21 @@ bash ~/my-linux-setup/manage.sh driver nvidia --apply
 
 Module notes in [`drivers/nvidia/README.md`](drivers/nvidia/README.md).
 
+## Downloads and verification
+
+GitHub release downloads use upstream SHA-256 metadata when present. Only digest-verified assets can use mirror fallbacks or a cached file. Assets without a digest are fetched directly from the origin each time. Ghostty's Debian/Ubuntu packages and Zotero's APT repository are community-maintained, not vendor-built packages.
+
+```bash
+bash tests/run.sh
+python3 -m py_compile drivers/nvidia/probe_nvidia_metadata.py extras/my-ai-tools/claude-session-manager/session_manager_server.py
+bash manage.sh check
+```
+
+The tests exercise fake commands and temporary data, including failed mounts, failed downloads, interrupted deletion, and hostile session text. They do not validate an actual boot migration, driver installation, or live GNOME session; those need a disposable VM or suitable test machine. Upstream interface evidence is collected in [maintenance notes](MAINTENANCE.md).
+
 ## Extras
+
+These include both runnable tools and historical workstation records. Version numbers in incident/setup notes describe the recorded environment, not a requirement to downgrade a new installation.
 
 | Directory | Contents |
 |---|---|
@@ -169,4 +181,4 @@ Module notes in [`drivers/nvidia/README.md`](drivers/nvidia/README.md).
 | `extras/psychtoolbox/` | Psychtoolbox 3 local install notes |
 | `extras/wemeet-screen-share-fix/` | Wemeet screen-share black-screen fix |
 | `extras/zeabur/` | Zeabur server VPSization notes |
-| `extras/my-ai-tools/` | Standalone local/remote helper tool notes |
+| `extras/my-ai-tools/` | [Local session browser](extras/my-ai-tools/claude-session-manager/README.md); [CLIProxyAPIPlus and Mihomo VPS notes](extras/my-ai-tools/cpa-deploy/README.md) |

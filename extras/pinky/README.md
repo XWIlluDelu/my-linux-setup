@@ -1,6 +1,6 @@
 # Pinky
 
-Pinky v5 is a GNOME Shell extension that pins the focused window's geometry or keeps it always on top. It targets GNOME Shell 50; the local build is active on GNOME 50.2 / Wayland.
+Pinky v5 is a GNOME Shell extension that pins the focused window's geometry or keeps it always on top. It targets GNOME Shell 50; the recorded local test used GNOME 50.2 / Wayland.
 
 ## Shortcuts
 

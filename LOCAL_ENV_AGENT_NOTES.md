@@ -15,6 +15,8 @@ Repository rule: `assets/` contains only generic configuration that `my-linux-se
 - `~/.local/state/linux-setup/shell-env-profile`
 - `~/.local/state/linux-setup/shell-env.env`
 
+Before replacing configuration, fresh setup and sync save existing shell files under `~/.local/state/linux-setup/backups/shell-<timestamp>-<pid>/`. Restore only the needed local additions from that backup; a later sync still replaces the managed files.
+
 A sync removes `~/.tmux.conf` only when its first line is the legacy marker `# Linux Setup tmux config`. It does not own arbitrary local shell snippets outside the listed files.
 
 ## Local recovery policy

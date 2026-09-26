@@ -12,6 +12,7 @@ VSCODE_LIST="/etc/apt/sources.list.d/vscode.list"
 VSCODE_DEB822_LIST="/etc/apt/sources.list.d/vscode.sources"
 EDGE_LIST="/etc/apt/sources.list.d/microsoft-edge.list"
 TMP_KEY=""
+RESULT_LOG_OWNED=0
 
 DESKTOP_ESSENTIALS=1
 INSTALL_VSCODE=1
@@ -21,6 +22,9 @@ MICROSOFT_REPOS_READY=1
 cleanup() {
   if [[ -n "${TMP_KEY:-}" && -f "${TMP_KEY:-}" ]]; then
     rm -f "$TMP_KEY"
+  fi
+  if [[ "$RESULT_LOG_OWNED" -eq 1 ]]; then
+    rm -f "$LINUX_SETUP_RESULT_LOG"
   fi
 }
 trap cleanup EXIT
@@ -83,15 +87,15 @@ prune_conflicting_microsoft_sources() {
   # different Signed-By keyring path. Keep one canonical source definition to
   # avoid apt errors like:
   # "Conflicting values set for option Signed-By ..."
-  if [[ -f "$VSCODE_DEB822_LIST" ]]; then
+  if [[ "$INSTALL_VSCODE" -eq 1 && -f "$VSCODE_DEB822_LIST" ]]; then
     info "Removing conflicting VS Code source definition: $VSCODE_DEB822_LIST"
-    as_root rm -f "$VSCODE_DEB822_LIST"
+    as_root rm -f "$VSCODE_DEB822_LIST" || return 1
     changed=1
   fi
 
-  if [[ -f "/etc/apt/sources.list.d/microsoft-edge.sources" ]]; then
+  if [[ "$INSTALL_EDGE" -eq 1 && "$ARCH" == amd64 && -f "/etc/apt/sources.list.d/microsoft-edge.sources" ]]; then
     info "Removing conflicting Edge source definition: /etc/apt/sources.list.d/microsoft-edge.sources"
-    as_root rm -f "/etc/apt/sources.list.d/microsoft-edge.sources"
+    as_root rm -f "/etc/apt/sources.list.d/microsoft-edge.sources" || return 1
     changed=1
   fi
 
@@ -101,36 +105,31 @@ prune_conflicting_microsoft_sources() {
 }
 
 setup_microsoft_repos() {
-  prune_conflicting_microsoft_sources
+  info "[1/3] Install Microsoft signing key"
+  TMP_KEY="$(mktemp)" || return 1
+  curl -fsSL "$KEY_URL" | gpg --batch --dearmor > "$TMP_KEY" || return 1
+  as_root install -o root -g root -m 644 "$TMP_KEY" "$KEYRING_PATH" || return 1
 
-  info "[1/4] Install Microsoft repository prerequisites"
-  apt_noninteractive update
-  apt_noninteractive install -y ca-certificates curl gpg
-
-  info "[2/4] Install Microsoft signing key"
-  TMP_KEY="$(mktemp)"
-  curl -fsSL "$KEY_URL" | gpg --dearmor > "$TMP_KEY"
-  as_root install -o root -g root -m 644 "$TMP_KEY" "$KEYRING_PATH"
-
-  info "[3/4] Configure Microsoft APT repositories"
+  info "[2/3] Configure selected Microsoft APT repositories"
+  prune_conflicting_microsoft_sources || return 1
   if [[ "$INSTALL_VSCODE" -eq 1 ]]; then
     printf 'deb [arch=%s signed-by=%s] https://packages.microsoft.com/repos/code stable main\n' \
       "$ARCH" "$KEYRING_PATH" \
-      | as_root tee "$VSCODE_LIST" >/dev/null
+      | as_root tee "$VSCODE_LIST" >/dev/null || return 1
   fi
 
   if [[ "$INSTALL_EDGE" -eq 1 ]]; then
     if [[ "$ARCH" == "amd64" ]]; then
       printf 'deb [arch=amd64 signed-by=%s] https://packages.microsoft.com/repos/edge stable main\n' \
         "$KEYRING_PATH" \
-        | as_root tee "$EDGE_LIST" >/dev/null
+        | as_root tee "$EDGE_LIST" >/dev/null || return 1
     else
       warn "Edge is only available from the official repo on amd64. Skipping Edge source for $ARCH."
       record_result edge skipped_unsupported "Microsoft Edge official repo only supports amd64."
     fi
   fi
 
-  info "[4/4] Refresh package metadata after repo changes"
+  info "[3/3] Refresh package metadata after repo changes"
   apt_noninteractive update
 }
 
@@ -383,15 +382,6 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-ensure_command sudo
-ensure_command apt-get
-ensure_command apt-cache
-ensure_command dpkg
-ensure_command curl
-ensure_command gpg
-ensure_command install
-ARCH="$(dpkg --print-architecture)"
-
 if [[ "$APPLY" -ne 1 ]]; then
   cat <<EOF
 This was a check run. The script would:
@@ -412,6 +402,19 @@ EOF
   exit 0
 fi
 
+supports_debian_apt_workflow || die "Packaged desktop apps require Debian/Ubuntu apt."
+ensure_command apt-get
+ensure_command apt-cache
+ensure_command dpkg
+ensure_command curl
+ensure_command gpg
+ensure_command install
+ARCH="$(dpkg --print-architecture)"
+if [[ -z "${LINUX_SETUP_RESULT_LOG:-}" ]]; then
+  LINUX_SETUP_RESULT_LOG="$(mktemp)"
+  RESULT_LOG_OWNED=1
+fi
+INITIAL_FAILURES="$(result_failed_count)"
 record_result_for_disabled_items
 
 if [[ "$DESKTOP_ESSENTIALS" -eq 0 && "$INSTALL_VSCODE" -eq 0 && "$INSTALL_EDGE" -eq 0 ]]; then
@@ -428,7 +431,12 @@ if [[ "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 ]]; then
   fi
 fi
 
+if [[ "$INSTALL_VSCODE" -eq 0 && "$INSTALL_EDGE" -eq 0 ]]; then
+  apt_noninteractive update
+fi
 install_desktop_essentials
 install_vscode
 install_edge
 purge_debian_desktop_defaults
+
+[[ "$(result_failed_count)" -eq "$INITIAL_FAILURES" ]]

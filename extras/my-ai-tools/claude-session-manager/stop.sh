@@ -2,9 +2,23 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$ROOT_DIR/session-manager.pid"
+PID_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/claude-session-manager/server.pid"
 PORT="${SESSION_MANAGER_PORT:-8765}"
 SCRIPT_PATH="$ROOT_DIR/session_manager_server.py"
+
+APPLY=0
+for arg in "$@"; do
+  case "$arg" in
+    --check) APPLY=0 ;;
+    --apply) APPLY=1 ;;
+    -h|--help) printf 'Usage: stop.sh [--check|--apply]\n'; exit 0 ;;
+    *) printf 'Unknown argument: %s\n' "$arg" >&2; exit 1 ;;
+  esac
+done
+if [[ "$APPLY" -ne 1 ]]; then
+  printf '[check] Would stop this session manager; PID file: %s\n' "$PID_FILE"
+  exit 0
+fi
 
 get_listener_pid() {
   local listener_pid
@@ -14,7 +28,7 @@ get_listener_pid() {
 
 is_session_manager_pid() {
   local candidate_pid="$1"
-  if [[ -z "$candidate_pid" ]] || ! kill -0 "$candidate_pid" 2>/dev/null; then
+  if [[ ! "$candidate_pid" =~ ^[1-9][0-9]*$ ]] || ! kill -0 "$candidate_pid" 2>/dev/null; then
     return 1
   fi
 

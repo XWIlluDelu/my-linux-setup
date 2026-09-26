@@ -55,7 +55,7 @@ download_url_with_speed_guard() {
     fi
   fi
 
-  mv "$tmp_path" "$target_path"
+  mv "$tmp_path" "$target_path" || return 1
   info "Saved to $target_path"
 }
 github_release_api_get() {
@@ -63,14 +63,14 @@ github_release_api_get() {
   url="$1"
 
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    curl -fsSL \
+    curl -fsSL --connect-timeout 10 --max-time 45 \
       -H 'Accept: application/vnd.github+json' \
       -H 'X-GitHub-Api-Version: 2022-11-28' \
       -H 'User-Agent: linux-setup' \
       -H "Authorization: Bearer ${GITHUB_TOKEN}" \
       "$url"
   else
-    curl -fsSL \
+    curl -fsSL --connect-timeout 10 --max-time 45 \
       -H 'Accept: application/vnd.github+json' \
       -H 'X-GitHub-Api-Version: 2022-11-28' \
       -H 'User-Agent: linux-setup' \
@@ -91,7 +91,6 @@ github_release_parse_latest() {
       | python3 -c '
 import json
 import re
-import shlex
 import sys
 
 asset_regex = re.compile(sys.argv[1])
@@ -111,9 +110,8 @@ if asset is None:
 
 tag = data.get("tag_name", "")
 version = tag[len(tag_strip_prefix):] if tag_strip_prefix and tag.startswith(tag_strip_prefix) else tag
-digest = asset.get("digest", "")
-if digest.startswith("sha256:"):
-    digest = digest.split(":", 1)[1]
+digest = asset.get("digest") or ""
+digest = digest[7:] if re.fullmatch(r"sha256:[0-9a-fA-F]{64}", digest) else ""
 
 fields = {
     "GITHUB_RELEASE_TAG": tag,
@@ -126,7 +124,9 @@ fields = {
 }
 
 for key, value in fields.items():
-    print(f"{key}={shlex.quote(value)}")
+    if not isinstance(value, str) or any(ord(c) < 32 for c in value):
+        raise SystemExit("invalid release metadata")
+    print(f"{key}={value}")
 ' "$asset_regex" "$tag_strip_prefix"
   )"; then
     :
@@ -135,7 +135,6 @@ for key, value in fields.items():
       python3 - "$repo" "$asset_regex" "$tag_strip_prefix" <<'PY'
 import html
 import re
-import shlex
 import subprocess
 import sys
 
@@ -146,7 +145,7 @@ latest_url = f"https://github.com/{repo}/releases/latest"
 
 def curl(*args):
     return subprocess.check_output(
-        ["curl", "-fsSL", "-A", "linux-setup", *args],
+        ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "45", "-A", "linux-setup", *args],
         universal_newlines=True,
     )
 
@@ -155,7 +154,8 @@ if not release_url:
     raise SystemExit(1)
 
 tag = release_url.rstrip("/").rsplit("/", 1)[-1]
-html_doc = curl(release_url)
+# Release pages lazy-load asset links from this fragment.
+html_doc = curl(f"https://github.com/{repo}/releases/expanded_assets/{tag}")
 
 asset = None
 for href in re.findall(r'href="([^"]+)"', html_doc):
@@ -186,7 +186,9 @@ fields = {
 }
 
 for key, value in fields.items():
-    print(f"{key}={shlex.quote(value)}")
+    if any(ord(c) < 32 for c in value):
+        raise SystemExit("invalid release metadata")
+    print(f"{key}={value}")
 PY
     )"; then
       warn "Could not parse latest release metadata for ${repo}"
@@ -196,10 +198,10 @@ PY
 
   while IFS='=' read -r __key __val; do
     [[ -n "$__key" ]] || continue
-    # Strip surrounding single quotes produced by shlex.quote()
-    __val="${__val#\'}" ; __val="${__val%\'}"
     printf -v "$__key" '%s' "$__val"
   done <<< "$assignments"
+  [[ "$GITHUB_ASSET_NAME" != */* && "$GITHUB_ASSET_NAME" != . && "$GITHUB_ASSET_NAME" != .. && -n "$GITHUB_ASSET_NAME" ]] || return 1
+  [[ "$GITHUB_ASSET_URL" == "https://github.com/${repo}/releases/download/"* ]] || return 1
 }
 github_release_append_default_mirrors() {
   if [[ "${GITHUB_RELEASE_NO_DEFAULT_MIRRORS:-0}" == "1" ]]; then
@@ -280,19 +282,28 @@ github_release_download_asset() {
   expected_sha256="$2"
   target_path="$3"
 
-  mkdir -p "$(dirname "$target_path")"
+  ensure_command curl
+  [[ -z "$expected_sha256" || "$expected_sha256" =~ ^[0-9a-fA-F]{64}$ ]] || return 1
+  expected_sha256="${expected_sha256,,}"
+  mkdir -p "$(dirname "$target_path")" || return 1
 
   if [[ -f "$target_path" ]]; then
-    if github_release_verify_sha256 "$target_path" "$expected_sha256"; then
+    if [[ -n "$expected_sha256" ]] && github_release_verify_sha256 "$target_path" "$expected_sha256"; then
       info "Using existing verified file: $target_path"
       return
     fi
-    warn "Existing file failed digest verification, re-downloading: $target_path"
-    rm -f "$target_path"
+    info "Cached file has no matching upstream digest; re-downloading: $target_path"
+    rm -f "$target_path" || return 1
   fi
 
   tmp_path="${target_path}.part"
-  github_release_build_candidate_urls "$asset_url"
+  if [[ -n "$expected_sha256" ]]; then
+    github_release_build_candidate_urls "$asset_url"
+  else
+    # An unverified mirror must never supply a package/installer we execute.
+    DOWNLOAD_CANDIDATE_URLS=("$asset_url")
+    info "No upstream SHA-256 digest; using the origin only, without cache reuse."
+  fi
   speed_limit="${GITHUB_DOWNLOAD_SPEED_LIMIT:-204800}"
   speed_time="${GITHUB_DOWNLOAD_SPEED_TIME:-8}"
 
@@ -318,7 +329,7 @@ github_release_download_asset() {
       continue
     fi
 
-    mv "$tmp_path" "$target_path"
+    mv "$tmp_path" "$target_path" || return 1
     info "Saved to $target_path"
     return
   done

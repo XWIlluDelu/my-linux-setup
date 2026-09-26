@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import html
 import json
 import os
@@ -11,7 +12,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -35,6 +36,27 @@ COMMAND_MESSAGE_RE = re.compile(r"<command-message>.*?</command-message>", re.DO
 COMMAND_ARGS_RE = re.compile(r"<command-args>.*?</command-args>", re.DOTALL)
 GENERIC_TAG_RE = re.compile(r"<[^>]+>")
 MULTISPACE_RE = re.compile(r"\s+")
+SESSION_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
+
+
+def valid_session_id(value: Any) -> bool:
+    return isinstance(value, str) and SESSION_ID_RE.fullmatch(value) is not None
+
+
+def local_path(path: Path, root: Path) -> bool:
+    """Accept only descendants without symlink components below the data root."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return False
+    current = root
+    for part in parts:
+        if part in (".", ".."):
+            return False
+        current = current / part
+        if current.is_symlink():
+            return False
+    return bool(parts) and path.resolve().is_relative_to(root.resolve())
 
 
 @dataclass
@@ -68,7 +90,7 @@ def iso_from_any_timestamp(value: Any) -> str | None:
 
 def parse_jsonl(path: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    if not path.exists():
+    if not path.is_file() or path.is_symlink():
         return records
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -87,9 +109,9 @@ def parse_jsonl(path: Path) -> list[dict[str, Any]]:
 def derive_session_id(path: Path, records: list[dict[str, Any]]) -> str:
     for record in records:
         session_id = record.get("sessionId")
-        if isinstance(session_id, str) and session_id.strip():
-            return session_id.strip()
-    return path.stem
+        if valid_session_id(session_id):
+            return session_id
+    return path.stem if valid_session_id(path.stem) else ""
 
 
 def jsonl_size_bytes(path: Path) -> int | None:
@@ -113,6 +135,8 @@ def read_runtime_index() -> dict[str, RuntimeSessionInfo]:
     if not SESSIONS_DIR.exists():
         return grouped
     for path in SESSIONS_DIR.glob("*.json"):
+        if not local_path(path, SESSIONS_DIR):
+            continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -261,7 +285,7 @@ def dir_total_bytes(path: Path) -> int:
     if not path.exists() or not path.is_dir():
         return total
     for entry in path.rglob("*"):
-        if entry.is_file():
+        if entry.is_file() and local_path(entry, path):
             try:
                 total += entry.stat().st_size
             except OSError:
@@ -288,8 +312,12 @@ def candidate_subagent_dirs(session_path: Path, session_id: str) -> list[Path]:
     candidates: list[Path] = []
     seen: set[Path] = set()
     for candidate_name in (session_path.stem, session_id):
+        if not valid_session_id(candidate_name):
+            continue
         session_dir = session_path.parent / candidate_name
         subagents_dir = session_dir / "subagents"
+        if not local_path(subagents_dir, PROJECTS_DIR):
+            continue
         if subagents_dir in seen:
             continue
         seen.add(subagents_dir)
@@ -490,6 +518,8 @@ def normalize_session_file(
     runtime_index: dict[str, RuntimeSessionInfo],
     source_category: str,
 ) -> dict[str, Any] | None:
+    if not local_path(path, PROJECTS_DIR):
+        return None
     records = parse_jsonl(path)
     if not records:
         return None
@@ -500,6 +530,8 @@ def normalize_session_file(
 
 
 def find_session_transcript_path(session_id: str) -> Path | None:
+    if not valid_session_id(session_id):
+        raise ValueError("Invalid session id")
     if not PROJECTS_DIR.exists():
         return None
 
@@ -507,13 +539,15 @@ def find_session_transcript_path(session_id: str) -> Path | None:
         if not project_dir.is_dir():
             continue
         candidate = project_dir / f"{session_id}.jsonl"
-        if candidate.exists():
+        if local_path(candidate, PROJECTS_DIR) and candidate.is_file():
             return candidate
 
     for project_dir in PROJECTS_DIR.iterdir():
         if not project_dir.is_dir():
             continue
         for candidate in project_dir.glob("*.jsonl"):
+            if not local_path(candidate, PROJECTS_DIR):
+                continue
             records = parse_jsonl(candidate)
             if records and derive_session_id(candidate, records) == session_id:
                 return candidate
@@ -524,26 +558,31 @@ def find_session_transcript_path(session_id: str) -> Path | None:
 def compact_history_file(session_id: str) -> int:
     if not HISTORY_PATH.exists():
         return 0
+    if not local_path(HISTORY_PATH, CLAUDE_DIR):
+        raise ValueError("Refusing to rewrite a symlinked history file")
+    original_stat = HISTORY_PATH.stat()
     removed = 0
-    temp_path = HISTORY_PATH.with_suffix(".jsonl.tmp")
-    with (
-        HISTORY_PATH.open("r", encoding="utf-8") as src,
-        temp_path.open("w", encoding="utf-8") as dst,
-    ):
-        for line in src:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                payload = json.loads(stripped)
-            except json.JSONDecodeError:
-                dst.write(line)
-                continue
-            if isinstance(payload, dict) and payload.get("sessionId") == session_id:
-                removed += 1
-                continue
-            dst.write(line)
-    temp_path.replace(HISTORY_PATH)
+    fd, name = tempfile.mkstemp(prefix=".history-", dir=CLAUDE_DIR)
+    temp_path = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as dst, HISTORY_PATH.open("r", encoding="utf-8") as src:
+            os.fchmod(dst.fileno(), original_stat.st_mode & 0o777)
+            for line in src:
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    dst.write(line)
+                    continue
+                if isinstance(payload, dict) and payload.get("sessionId") == session_id:
+                    removed += 1
+                else:
+                    dst.write(line)
+        current_stat = HISTORY_PATH.stat()
+        if (current_stat.st_ino, current_stat.st_size, current_stat.st_mtime_ns) != (original_stat.st_ino, original_stat.st_size, original_stat.st_mtime_ns):
+            raise RuntimeError("History changed during deletion; stop Claude before retrying")
+        temp_path.replace(HISTORY_PATH)
+    finally:
+        temp_path.unlink(missing_ok=True)
     return removed
 
 
@@ -566,6 +605,8 @@ def restore_staged_moves(staged_moves: list[StagedPathMove]) -> None:
         if not move.staged_path.exists():
             continue
         move.original_path.parent.mkdir(parents=True, exist_ok=True)
+        if move.original_path.exists() or move.original_path.is_symlink():
+            raise RuntimeError(f"Cannot restore over a newly created path: {move.original_path}")
         move.staged_path.replace(move.original_path)
 
 
@@ -593,11 +634,23 @@ def collect_runtime_sidecars(session_id: str) -> list[Path]:
     if not SESSIONS_DIR.exists():
         return matches
     for path in SESSIONS_DIR.glob("*.json"):
+        if not local_path(path, SESSIONS_DIR):
+            continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
         if isinstance(payload, dict) and payload.get("sessionId") == session_id:
+            pid = payload.get("pid")
+            if isinstance(pid, int) and pid > 0:
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    raise ValueError("Session process is still running; stop it before deletion")
+                else:
+                    raise ValueError("Session process is still running; stop it before deletion")
             matches.append(path)
     return matches
 
@@ -616,34 +669,22 @@ def delete_session_record(session_id: str) -> dict[str, Any]:
     runtime_files = collect_runtime_sidecars(session_id)
     staged_moves: list[StagedPathMove] = []
 
-    with tempfile.TemporaryDirectory(
-        prefix="claude-session-delete-", dir=str(CLAUDE_DIR)
-    ) as staging_dir:
-        staging_root = Path(staging_dir)
+    # Keep staged data if rollback itself fails; TemporaryDirectory would erase it.
+    staging_root = Path(tempfile.mkdtemp(prefix="claude-session-delete-", dir=CLAUDE_DIR))
+    try:
+        staged_moves.append(stage_path_for_deletion(transcript_path, staging_root, "transcript", 0))
+        for index, path in enumerate([*session_dirs, *runtime_files], start=1):
+            staged_moves.append(stage_path_for_deletion(path, staging_root, "sidecar", index))
+        history_removed = compact_history_file(session_id)
+    except Exception:
         try:
-            staged_moves.append(
-                stage_path_for_deletion(transcript_path, staging_root, "transcript", 0)
-            )
-            next_index = 1
-            for session_dir in session_dirs:
-                staged_moves.append(
-                    stage_path_for_deletion(
-                        session_dir, staging_root, "session-dir", next_index
-                    )
-                )
-                next_index += 1
-            for runtime_file in runtime_files:
-                staged_moves.append(
-                    stage_path_for_deletion(
-                        runtime_file, staging_root, "runtime", next_index
-                    )
-                )
-                next_index += 1
-
-            history_removed = compact_history_file(session_id)
-        except Exception:
             restore_staged_moves(staged_moves)
-            raise
+        except Exception as exc:
+            raise RuntimeError(f"Rollback failed; recover staged files from {staging_root}") from exc
+        shutil.rmtree(staging_root)
+        raise
+    else:
+        shutil.rmtree(staging_root)
 
     return {
         "recordId": f"claude:{session_id}",
@@ -721,7 +762,18 @@ class SessionManagerHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _local_request(self) -> bool:
+        port = self.server.server_port
+        hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        origin = self.headers.get("Origin")
+        if self.headers.get("Host") not in hosts or (origin is not None and origin not in {f"http://{host}" for host in hosts}):
+            self._write_json({"error": "Local same-origin requests only"}, HTTPStatus.FORBIDDEN)
+            return False
+        return True
+
     def do_GET(self) -> None:  # noqa: N802
+        if not self._local_request():
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/sessions":
             try:
@@ -750,15 +802,17 @@ class SessionManagerHandler(BaseHTTPRequestHandler):
         self._write_text("Not Found", status=HTTPStatus.NOT_FOUND)
 
     def do_DELETE(self) -> None:  # noqa: N802
+        if not self._local_request():
+            return
         parsed = urlparse(self.path)
         if not parsed.path.startswith("/api/sessions/"):
             self._write_json({"error": "Not Found"}, status=HTTPStatus.NOT_FOUND)
             return
 
-        session_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
-        if not session_id:
+        session_id = unquote(parsed.path[len("/api/sessions/"):])
+        if not valid_session_id(session_id):
             self._write_json(
-                {"error": "Missing session id"}, status=HTTPStatus.BAD_REQUEST
+                {"error": "Invalid session id"}, status=HTTPStatus.BAD_REQUEST
             )
             return
 
@@ -766,6 +820,9 @@ class SessionManagerHandler(BaseHTTPRequestHandler):
             result = delete_session_record(session_id)
         except FileNotFoundError as exc:
             self._write_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+            return
+        except ValueError as exc:
+            self._write_json({"error": str(exc)}, status=HTTPStatus.CONFLICT)
             return
         except Exception as exc:  # noqa: BLE001
             self._write_json(
@@ -781,9 +838,18 @@ class SessionManagerHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Local Claude session browser; --serve starts the delete-capable API.")
+    parser.add_argument("--serve", action="store_true", help="start the loopback server (execution mode)")
+    args = parser.parse_args()
+    if not args.serve:
+        print(f"Check: would serve the session UI and deletion API for {CLAUDE_DIR}; use --serve to start.")
+        return
     port = int(os.environ.get("SESSION_MANAGER_PORT", "8765"))
     host = os.environ.get("SESSION_MANAGER_HOST", "127.0.0.1")
-    server = ThreadingHTTPServer((host, port), SessionManagerHandler)
+    if host not in {"127.0.0.1", "localhost"}:
+        raise SystemExit("SESSION_MANAGER_HOST must be 127.0.0.1 or localhost")
+    # Serial requests prevent concurrent deletions from racing history rewrites.
+    server = HTTPServer((host, port), SessionManagerHandler)
     print(f"Claude session manager available at http://{host}:{port}")
     try:
         server.serve_forever()

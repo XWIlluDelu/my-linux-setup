@@ -188,6 +188,18 @@ install_uv() {
   run_as_target_user "$target_user" "$target_home" env UV_NO_MODIFY_PATH=1 sh "$script_path"
 }
 
+backup_shell_configs() {
+  local backup_dir relative
+  backup_dir="$(linux_setup_state_dir_for_home "$TARGET_HOME")/backups/shell-$(date +%Y%m%d-%H%M%S)-$$"
+  for relative in .profile .bashrc .zshrc .config/shell .config/starship.toml; do
+    if [[ -e "$TARGET_HOME/$relative" || -L "$TARGET_HOME/$relative" ]]; then
+      run_as_target_user "$TARGET_USER" "$TARGET_HOME" mkdir -p "$backup_dir/$(dirname "$relative")"
+      run_as_target_user "$TARGET_USER" "$TARGET_HOME" cp -a -- "$TARGET_HOME/$relative" "$backup_dir/$relative"
+    fi
+  done
+  info "[shell] Existing shell configuration backup: $backup_dir"
+}
+
 clean_shell_env_user_state() {
   local target_user target_home state_dir state_file marker_file
   target_user="$1"
@@ -389,6 +401,7 @@ if [[ "$(id -un)" != "$TARGET_USER" ]]; then
 fi
 
 if [[ "$CONFIG_ONLY" -eq 1 ]]; then
+  backup_shell_configs
   apply_shell_assets "$TARGET_USER" "$TARGET_HOME"
   info "[shell] Managed shell config files refreshed for $TARGET_USER"
   exit 0
@@ -406,6 +419,7 @@ ensure_sudo_session
 install_shell_packages
 
 if [[ "$UPDATE_ONLY" -ne 1 ]]; then
+  backup_shell_configs
   clean_shell_env_user_state "$TARGET_USER" "$TARGET_HOME"
 fi
 install_starship "$TARGET_USER" "$TARGET_HOME"

@@ -9,6 +9,7 @@ source "$ROOT_DIR/lib/common.sh"
 RUN_MODE="check"
 ASSUME_YES=0
 METADATA_JSON=""
+PROBE_DIR=""
 
 INSTALL_METHOD=""
 CUDA_CHOICE=""
@@ -60,8 +61,8 @@ restore_tty_after_whiptail() {
 }
 
 cleanup() {
-  if [[ -n "${METADATA_JSON:-}" && -f "${METADATA_JSON:-}" ]]; then
-    rm -f "$METADATA_JSON"
+  if [[ -n "${PROBE_DIR:-}" ]]; then
+    rm -rf "$PROBE_DIR"
   fi
 }
 trap cleanup EXIT
@@ -82,6 +83,7 @@ declare -A CUDA_PACKAGE_VERSION=()
 declare -A CUDA_RUNFILE_URL=()
 declare -A CUDA_RUNFILE_FILENAME=()
 declare -A CUDA_RUNFILE_MD5=()
+declare -A CUDA_RUNFILE_INCLUDES_DRIVER=()
 declare -A CUDA_COMPATIBLE_DRIVERS=()
 
 usage() {
@@ -108,7 +110,7 @@ Options for scripted apply mode:
 
 Behavior:
   - The package-managed path installs a specific open driver branch, can lock that branch, and optionally installs `cuda-toolkit-X-Y`.
-  - The runfile path downloads the selected CUDA runfile and hands control to NVIDIA's official installer, which may replace the current driver with a proprietary one.
+  - The runfile path uses NVIDIA's installer. Before CUDA 13.4 it includes a driver; CUDA 13.4+ Linux runfiles are toolkit-only.
   - The preview-only path resolves packages and links without making changes.
   - The skip path exits successfully without changing the system.
 EOF
@@ -345,13 +347,15 @@ prompt_bool() {
 }
 
 probe_metadata() {
-  METADATA_JSON="$(mktemp)"
+  PROBE_DIR="$(mktemp -d)"
+  METADATA_JSON="$PROBE_DIR/metadata.json"
   python3 "$SCRIPT_DIR/probe_nvidia_metadata.py" > "$METADATA_JSON"
 }
 
 load_metadata() {
   local kind a b c d e f g
-  while IFS=$'\t' read -r kind a b c d e f g; do
+  # Unlike IFS whitespace, a non-whitespace separator preserves empty fields.
+  while IFS='|' read -r kind a b c d e f g; do
     case "$kind" in
       system)
         SYSTEM_PRETTY_NAME="$a"
@@ -397,6 +401,7 @@ load_metadata() {
         CUDA_RUNFILE_URL["$a"]="$b"
         CUDA_RUNFILE_FILENAME["$a"]="$c"
         CUDA_RUNFILE_MD5["$a"]="$d"
+        CUDA_RUNFILE_INCLUDES_DRIVER["$a"]="$e"
         ;;
     esac
   done < <(
@@ -411,10 +416,10 @@ def s(value):
         return ""
     if isinstance(value, bool):
         return "1" if value else "0"
-    return str(value)
+    return str(value).replace("|", " ").replace("\n", " ")
 
 system = data["system"]
-print("\t".join([
+print("|".join([
     "system",
     s(system.get("pretty_name")),
     s(system.get("id")),
@@ -424,14 +429,14 @@ print("\t".join([
     s(system.get("current_repo_supported")),
     s(system.get("preferred_repo_id")),
 ]))
-print("\t".join([
+print("|".join([
     "system_extra",
     s(system.get("preferred_repo_supported")),
     ",".join(system.get("supported_repo_ids") or []),
     "unknown" if system.get("secure_boot_enabled") is None else ("1" if system.get("secure_boot_enabled") else "0"),
 ]))
 gpu = data["gpu"]
-print("\t".join([
+print("|".join([
     "gpu",
     s(gpu.get("name")),
     s(gpu.get("current_driver_version")),
@@ -440,7 +445,7 @@ print("\t".join([
 ]))
 for entry in gpu.get("open_drivers", []):
     compat = data["compatibility"]["by_driver"].get(entry["branch"], {})
-    print("\t".join([
+    print("|".join([
         "driver",
         s(entry.get("branch")),
         s(entry.get("candidate_version")),
@@ -449,10 +454,10 @@ for entry in gpu.get("open_drivers", []):
         s(compat.get("best_cuda")),
         ",".join(compat.get("compatible_families") or []),
     ]))
-print("\t".join(["cuda_meta", s(data["cuda"].get("latest_release"))]))
+print("|".join(["cuda_meta", s(data["cuda"].get("latest_release"))]))
 for entry in data["cuda"].get("versions", []):
     compat = data["compatibility"]["by_cuda"].get(entry["family"], {})
-    print("\t".join([
+    print("|".join([
         "cuda",
         s(entry.get("family")),
         s(entry.get("label")),
@@ -462,12 +467,13 @@ for entry in data["cuda"].get("versions", []):
         s(entry.get("package_version")),
         ",".join(compat.get("compatible_branches") or []),
     ]))
-    print("\t".join([
+    print("|".join([
         "cuda_runfile",
         s(entry.get("family")),
         s(entry.get("runfile_url")),
         s(entry.get("runfile_filename")),
         s(entry.get("runfile_md5")),
+        s(entry.get("runfile_includes_driver", True)),
     ]))
 PY
   )
@@ -512,8 +518,8 @@ detect_existing_nvidia_state() {
 
   if command_exists dpkg-query; then
     mapfile -t APT_NVIDIA_PACKAGES < <(
-      dpkg-query -W -f='${binary:Package}\t${Status}\n' 2>/dev/null \
-        | awk '$2=="install" && $3=="ok" && $4=="installed" {print $1}' \
+      dpkg-query -W -f='${binary:Package}\t${db:Status-Status}\n' 2>/dev/null \
+        | awk '$2=="installed" {print $1}' \
         | grep -E "$NVIDIA_PACKAGE_REGEX" \
         | sort -u || true
     )
@@ -634,7 +640,7 @@ purge_apt_managed_nvidia_stack() {
   apt_noninteractive purge -y "${APT_NVIDIA_PACKAGES[@]}"
   apt_noninteractive autoremove -y --purge
 
-  as_root bash -lc '
+  as_root bash -c '
     shopt -s nullglob
     rm -f /etc/apt/sources.list.d/cuda-*.list
     rm -f /etc/apt/preferences.d/cuda-repository-pin-600
@@ -671,6 +677,18 @@ run_deb_preflight() {
 
 run_runfile_preflight() {
   detect_existing_nvidia_state
+
+  if [[ "${CUDA_RUNFILE_INCLUDES_DRIVER[$RESOLVED_CUDA_FAMILY]}" == 0 ]]; then
+    local pkg
+    for pkg in "${APT_NVIDIA_PACKAGES[@]}"; do
+      case "$pkg" in
+        cuda-keyring) continue ;;
+        cuda-*|nsight-*) die "Remove the APT-managed CUDA toolkit before using a toolkit-only runfile; keep the driver installed." ;;
+      esac
+    done
+    info "This toolkit-only runfile keeps the installed driver and display manager."
+    return 0
+  fi
 
   if [[ "$SYSTEM_SECURE_BOOT" == "1" ]]; then
     die ".run mode is blocked while Secure Boot is enabled. Disable Secure Boot or use the package-managed driver path."
@@ -968,7 +986,7 @@ collect_toolkit_version_after_decide_later() {
 }
 
 maybe_collect_unsupported_repo_override() {
-  local default_flag=1
+  local default_flag=0
   if [[ "$SYSTEM_CURRENT_REPO_SUPPORTED" == "1" ]]; then
     ALLOW_UNSUPPORTED_CUDA_REPO=1
     return 0
@@ -1031,7 +1049,11 @@ resolve_run_toolkit() {
 collect_run_driver_strategy() {
   [[ -n "$RESOLVED_CUDA_FAMILY" ]] || return 0
   has_interactive_tty || die ".run mode requires an interactive terminal because the NVIDIA installer uses its own UI."
-  warn ".run mode will download the CUDA ${RESOLVED_CUDA_FAMILY} runfile and then hand control to NVIDIA's official installer. Its default path may replace the current package-managed open driver with a proprietary driver."
+  if [[ "${CUDA_RUNFILE_INCLUDES_DRIVER[$RESOLVED_CUDA_FAMILY]}" == 0 ]]; then
+    warn "CUDA ${RESOLVED_CUDA_FAMILY} runfiles contain only the toolkit. Install a compatible driver separately."
+    return 0
+  fi
+  warn ".run mode hands control to NVIDIA's installer and may replace the existing driver."
   if current_driver_supports_cuda "$RESOLVED_CUDA_FAMILY"; then
     info "Current driver ${GPU_CURRENT_DRIVER_VERSION} already satisfies CUDA ${RESOLVED_CUDA_FAMILY}, but the runfile installer will still decide how to handle the driver."
   else
@@ -1052,7 +1074,7 @@ NVIDIA probe summary:
   - current_cuda_repo=${SYSTEM_CURRENT_REPO_ID:-none}
   - current_cuda_repo_supported=$( [[ "$SYSTEM_CURRENT_REPO_SUPPORTED" == "1" ]] && printf yes || printf no )
   - preferred_cuda_repo=${SYSTEM_PREFERRED_REPO_ID:-none}
-  - secure_boot=$( [[ "$SYSTEM_SECURE_BOOT" == "1" ]] && printf enabled || [[ "$SYSTEM_SECURE_BOOT" == "0" ]] && printf disabled || printf unknown )
+  - secure_boot=$(case "$SYSTEM_SECURE_BOOT" in 1) printf enabled ;; 0) printf disabled ;; *) printf unknown ;; esac)
   - latest_cuda_release=${CUDA_LATEST_RELEASE:-unknown}
 EOF
   printf '\nOpen driver branches:\n'
@@ -1131,7 +1153,7 @@ ensure_driver_prereqs() {
   if package_available "$headers_pkg"; then
     apt_noninteractive install -y "$headers_pkg" "${packages[@]}"
   else
-    warn "Kernel headers package not available right now: ${headers_pkg}. Continuing without it."
+    [[ -f "/lib/modules/$(uname -r)/build/Makefile" ]] || die "Matching kernel headers are required: ${headers_pkg}."
     apt_noninteractive install -y "${packages[@]}"
   fi
 }
@@ -1166,8 +1188,8 @@ install_open_driver_branch() {
     info "Installed open driver package ${package}."
   fi
 
-  rebuild_initramfs_if_possible || true
-  rebuild_grub_if_possible || true
+  rebuild_initramfs_if_possible
+  rebuild_grub_if_possible
 }
 
 hold_driver_branch_packages() {
@@ -1191,14 +1213,14 @@ configure_cuda_repo() {
   local repo_id keyring_url keyring_path
   repo_id="$1"
   keyring_url="https://developer.download.nvidia.com/compute/cuda/repos/${repo_id}/x86_64/cuda-keyring_1.1-1_all.deb"
-  keyring_path="/tmp/cuda-keyring-${repo_id}.deb"
+  keyring_path="$PROBE_DIR/cuda-keyring-${repo_id}.deb"
 
   ensure_sudo_session
   ensure_command curl
   info "Configuring NVIDIA CUDA apt repo: ${repo_id}"
   download_url_with_speed_guard "$keyring_url" "$keyring_path"
   as_root dpkg -i "$keyring_path"
-  as_root bash -lc '
+  as_root bash -c '
     shopt -s nullglob
     desired="cuda-'"${repo_id}"'-x86_64.list"
     for file in /etc/apt/sources.list.d/cuda-*.list; do
@@ -1251,8 +1273,9 @@ install_cuda_toolkit_runfile() {
   download_with_md5 "$runfile_url" "$runfile_path" "$runfile_md5"
   ensure_sudo_session
   has_interactive_tty || die ".run mode requires an interactive terminal because the NVIDIA installer uses its own UI."
+  # Acquire and verify the installer before any purge or display-manager stop.
+  run_runfile_preflight
   info "Launching the official NVIDIA runfile installer: ${runfile_name}"
-  info "Use the default selections there if you want the standard NVIDIA driver + CUDA install path."
   as_root sh "$runfile_path"
   info "The NVIDIA runfile installer exited successfully."
 }
@@ -1293,7 +1316,7 @@ print_manual_plan() {
 run_apply_plan() {
   case "$INSTALL_METHOD" in
     deb)
-      if [[ "$ALLOW_UNSUPPORTED_CUDA_REPO" -eq 1 && "$SYSTEM_CURRENT_REPO_SUPPORTED" != "1" && -n "$SYSTEM_PREFERRED_REPO_ID" ]]; then
+      if [[ "$ALLOW_UNSUPPORTED_CUDA_REPO" -eq 1 && -n "$SYSTEM_PREFERRED_REPO_ID" ]]; then
         configure_cuda_repo "$SYSTEM_PREFERRED_REPO_ID"
       fi
       install_open_driver_branch "$DRIVER_BRANCH"
@@ -1386,22 +1409,31 @@ parse_args() {
 
 main() {
   parse_args "$@"
+  if [[ "$FORCED_INSTALL_METHOD" == skip ]]; then
+    info "NVIDIA installation was skipped."
+    return 0
+  fi
+  ensure_command python3
+  [[ "$(uname -m)" == x86_64 ]] || die "This module supports x86_64 only."
+  detect_os_release
+  [[ "$DISTRO_ID" == debian || "$DISTRO_ID" == ubuntu ]] || die "This module supports Debian/Ubuntu only."
   probe_metadata
   load_metadata
   detect_existing_nvidia_state
 
-  if [[ "${#DRIVER_BRANCHES[@]}" -eq 0 ]]; then
-    die "No open NVIDIA driver branches were detected from the current apt sources."
-  fi
   if [[ "${#CUDA_FAMILIES[@]}" -eq 0 ]]; then
     die "No CUDA toolkit versions were discovered from the probed NVIDIA metadata."
   fi
 
   if [[ "$RUN_MODE" == "check" ]]; then
     print_probe_summary
+    if [[ "${#DRIVER_BRANCHES[@]}" -eq 0 ]]; then
+      warn "No open driver branches are visible in the current APT sources. Configure a supported driver source before package-managed installation."
+    fi
     exit 0
   fi
 
+  APPLY=1
   collect_install_method
 
   if [[ "$INSTALL_METHOD" == "skip" ]]; then
@@ -1413,6 +1445,7 @@ main() {
 
   case "$INSTALL_METHOD" in
     deb)
+      [[ "${#DRIVER_BRANCHES[@]}" -gt 0 ]] || die "No open NVIDIA driver branches are available in the configured APT sources."
       run_deb_preflight
       collect_driver_branch_for_deb
       resolve_cuda_for_deb
@@ -1428,7 +1461,6 @@ main() {
       DRIVER_SELECTION_MODE="runfile"
       LOCK_DRIVER_BRANCH=0
       collect_run_driver_strategy
-      run_runfile_preflight
       INSTALL_TOOLKIT=$([[ -n "$RESOLVED_CUDA_FAMILY" ]] && printf 1 || printf 0)
       ALLOW_UNSUPPORTED_CUDA_REPO=0
       ;;

@@ -104,8 +104,18 @@ else
 fi
 
 if [[ ${#SNAP_PACKAGES[@]} -gt 0 ]]; then
-  for pkg in "${SNAP_PACKAGES[@]}"; do
-    run_as_root snap remove --purge "$pkg"
+  # Bases/content providers cannot be removed until their dependants are gone.
+  # Retry only while a pass makes progress; genuine failures still stop cleanup.
+  pending=("${SNAP_PACKAGES[@]}")
+  while [[ ${#pending[@]} -gt 0 ]]; do
+    remaining=()
+    for pkg in "${pending[@]}"; do
+      if ! run_as_root snap remove --purge "$pkg"; then
+        remaining+=("$pkg")
+      fi
+    done
+    [[ ${#remaining[@]} -lt ${#pending[@]} ]] || die "Could not remove snaps: ${remaining[*]}"
+    pending=("${remaining[@]}")
   done
 else
   info "No installed snap packages detected."
@@ -124,9 +134,11 @@ else
   warn "systemctl not found; skipping service management."
 fi
 
+# snap remove normally unmounts its revisions. Do not act on the stale list.
+mapfile -t SNAP_MOUNTS < <(findmnt -rn -o TARGET | awk '$1 == "/snap" || $1 ~ "^/snap/"' | sort -r)
 if [[ ${#SNAP_MOUNTS[@]} -gt 0 ]]; then
   for mountpoint in "${SNAP_MOUNTS[@]}"; do
-    run_as_root umount "$mountpoint" -lf
+    run_as_root umount "$mountpoint"
   done
 else
   info "No mounted /snap entries detected."
@@ -138,7 +150,8 @@ else
   info "snapd package is already absent."
 fi
 
-for path in "$HOME/snap" /var/snap /var/lib/snapd /var/cache/snapd /usr/lib/snapd /snap; do
+TARGET_HOME="$(resolve_target_home "$(resolve_target_user)")"
+for path in "$TARGET_HOME/snap" /var/snap /var/lib/snapd /var/cache/snapd /usr/lib/snapd /snap; do
   if [[ -e "$path" ]]; then
     run_as_root rm -rf -- "$path"
   else

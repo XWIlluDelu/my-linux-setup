@@ -10,6 +10,8 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -76,7 +78,7 @@ def version_tuple(version: str) -> Tuple[int, ...]:
 
 
 def extract_numeric_driver(version: str) -> Optional[str]:
-    match = re.search(r"(\d+\.\d+\.\d+)", version)
+    match = re.search(r"(\d+\.\d+(?:\.\d+)?)", version)
     if not match:
         return None
     return match.group(1)
@@ -201,24 +203,56 @@ def parse_repo_packages(repo_id: str) -> Dict[str, Dict[str, Optional[str]]]:
     return packages
 
 
+class TableRows(HTMLParser):
+    """Read table cells independently of Sphinx's inline markup and entities."""
+
+    def __init__(self):
+        super().__init__()
+        self.rows = []
+        self.row = []
+        self.cell = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "tr":
+            self.row = []
+        elif tag in ("td", "th"):
+            self.cell = []
+
+    def handle_data(self, data):
+        if self.cell is not None:
+            self.cell.append(data)
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th") and self.cell is not None:
+            self.row.append(" ".join("".join(self.cell).split()))
+            self.cell = None
+        elif tag == "tr" and self.row:
+            self.rows.append(self.row)
+
+
 def parse_release_notes(html_text: str) -> Dict[str, Dict[str, str]]:
+    table = TableRows()
+    table.feed(html_text)
     results: Dict[str, Dict[str, str]] = {}
-    pattern = re.compile(
-        r"CUDA\s+(\d+\.\d+)\s+(Update\s+(\d+)|GA)</p></td>\s*<td><p>&gt;=([0-9.]+)</p>",
-        re.I,
-    )
-    for family, kind, update_num, min_driver in pattern.findall(html_text):
-        patch = update_num if update_num else "0"
-        release = f"{family}.{patch}"
-        label = f"CUDA {family} {kind}"
+    for cells in table.rows:
+        if len(cells) < 2:
+            continue
+        toolkit = re.fullmatch(r"CUDA\s+(\d+\.\d+)(?:\.(\d+))?(?:\s+(GA|Update\s+(\d+)))?", cells[0])
+        driver = re.fullmatch(r"(?:>=\s*|R)([0-9.]+)", cells[1])
+        if not toolkit or not driver:
+            continue
+        family, patch, _, update = toolkit.groups()
+        release = f"{family}.{patch or update or '0'}"
         record = results.get(family)
         if record and version_tuple(record["release"]) >= version_tuple(release):
             continue
         results[family] = {
             "family": family,
             "release": release,
-            "label": label,
-            "min_driver": min_driver,
+            "label": cells[0],
+            # Use NVIDIA's corresponding driver, not the less restrictive
+            # minor-version compatibility floor (which has feature limitations).
+            "min_driver": driver.group(1),
         }
     return results
 
@@ -261,6 +295,7 @@ def parse_runfile_info(release: str, latest_release: Optional[str]) -> Dict[str,
         if not filename or not filename.endswith(".run"):
             continue
         return {
+            "includes_driver": version_tuple(release) < (13, 4),
             "filename": filename,
             "url": f"https://developer.download.nvidia.com/compute/cuda/{release}/local_installers/{filename}",
             "md5": entry.get("md5sum"),
@@ -271,7 +306,7 @@ def parse_runfile_info(release: str, latest_release: Optional[str]) -> Dict[str,
 
 def run_command(args: List[str]) -> str:
     try:
-        result = subprocess.run(args, check=False, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        result = subprocess.run(args, check=False, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env={**os.environ, "LC_ALL": "C"})
     except FileNotFoundError:
         return ""
     if result.returncode != 0:
@@ -291,15 +326,12 @@ def apt_candidate_version(package_name: str) -> Optional[str]:
 
 
 def detect_installed_open_branch() -> Optional[str]:
-    output = run_command(["dpkg-query", "-W", "-f=${Package}\t${Version}\n", "nvidia-open", "nvidia-driver-*-open"])
+    output = run_command(["dpkg-query", "-W", "-f=${Package}\t${Version}\t${db:Status-Status}\n", "nvidia-open", "nvidia-driver-*-open"])
     for line in output.splitlines():
-        line = line.strip()
-        if not line:
+        fields = line.split("\t")
+        if len(fields) != 3 or fields[2] != "installed":
             continue
-        if "\t" in line:
-            package, version = line.split("\t", 1)
-        else:
-            package, version = line, ""
+        package, version, _ = fields
         match = re.match(r"nvidia-driver-(\d+)-open$", package)
         if match:
             return match.group(1)
@@ -325,9 +357,10 @@ def detect_gpu_name() -> Optional[str]:
         value = line.strip()
         if value:
             return value
-    output = run_command(["bash", "-lc", "lspci -nn | grep -i 'NVIDIA' | head -n 1"])
-    if output.strip():
-        return output.strip()
+    output = run_command(["lspci", "-nn"])
+    for line in output.splitlines():
+        if "nvidia" in line.lower():
+            return line.strip()
     return None
 
 
@@ -352,7 +385,7 @@ def parse_ubuntu_drivers() -> Tuple[List[Dict[str, object]], Optional[str]]:
 
 
 def fallback_open_drivers() -> List[Dict[str, object]]:
-    output = run_command(["bash", "-lc", "apt-cache show nvidia-open 2>/dev/null"])
+    output = run_command(["apt-cache", "show", "nvidia-open"])
     rows_by_branch: Dict[str, Dict[str, object]] = {}
     version: Optional[str] = None
 
@@ -391,7 +424,7 @@ def fallback_open_drivers() -> List[Dict[str, object]]:
         rows.sort(key=lambda item: int(item["branch"]))
         return rows
 
-    output = run_command(["bash", "-lc", "apt-cache search '^nvidia-driver-[0-9]+-open$' | sort -V"])
+    output = run_command(["apt-cache", "search", "^nvidia-driver-[0-9]+-open$"])
     rows: List[Dict[str, object]] = []
     for line in output.splitlines():
         match = re.match(r"nvidia-driver-(\d+)-open\s+-", line)
@@ -445,11 +478,13 @@ def build_cuda_versions(repo_packages: Dict[str, Dict[str, Optional[str]]], rele
         notes_entry = release_notes.get(family)
         if not notes_entry:
             continue
-        runfile_info = parse_runfile_info(notes_entry["release"], latest_release)
+        # CUDA 13.x lists branches rather than per-update releases. The repo
+        # metapackage supplies the actual toolkit patch version for its family.
+        release = repo_entry["package_release"] if version_tuple(family) >= (13, 0) else notes_entry["release"]
         versions.append(
             {
                 "family": family,
-                "release": notes_entry["release"],
+                "release": release,
                 "label": notes_entry["label"],
                 "min_driver": notes_entry["min_driver"],
                 "package_name": repo_entry["package_name"],
@@ -457,12 +492,24 @@ def build_cuda_versions(repo_packages: Dict[str, Dict[str, Optional[str]]], rele
                 "package_release": repo_entry["package_release"],
                 "runtime_dependency_branch": repo_entry["runtime_dependency_branch"],
                 "runtime_dependency_min_version": repo_entry["runtime_dependency_min_version"],
-                "runfile_url": runfile_info["url"],
-                "runfile_filename": runfile_info["filename"],
-                "runfile_md5": runfile_info["md5"],
-                "runfile_page_url": runfile_info["page_url"],
+                "runfile_url": None,
+                "runfile_filename": None,
+                "runfile_md5": None,
+                "runfile_page_url": build_download_page_url(release, latest_release),
+                "runfile_includes_driver": version_tuple(release) < (13, 4),
             }
         )
+    def attach_runfile(entry):
+        try:
+            info = parse_runfile_info(entry["release"], latest_release)
+            entry.update(runfile_url=info["url"], runfile_filename=info["filename"], runfile_md5=info["md5"])
+        except (RuntimeError, ValueError) as exc:
+            # A missing archive page must not hide a usable APT toolkit.
+            print(f"Runfile metadata unavailable for CUDA {entry['release']}: {exc}", file=sys.stderr)
+        return entry
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        versions = list(pool.map(attach_runfile, versions))
     versions.sort(key=lambda item: version_tuple(item["release"]))
     return versions
 
@@ -531,6 +578,8 @@ def main() -> int:
     latest_release = parse_archive_latest(archive_html)
     release_notes_html = fetch_text(RELEASE_NOTES_URL)
     release_notes = parse_release_notes(release_notes_html)
+    if not release_notes:
+        raise RuntimeError("NVIDIA release notes contain no recognized driver/toolkit rows.")
 
     repo_packages = parse_repo_packages(preferred_repo_id) if preferred_repo_id else {}
     cuda_versions = build_cuda_versions(repo_packages, release_notes, latest_release)

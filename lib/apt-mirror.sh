@@ -22,11 +22,11 @@ target_host = sys.argv[4]
 text = source.read_text()
 
 if os_id == "ubuntu":
-    pattern = re.compile(r'https?://([^/\s]+)/ubuntu/?')
+    pattern = re.compile(r'https?://([^/\s]+)/ubuntu/?(?=\s|$)')
     security_host = "security.ubuntu.com"
     suffix = "ubuntu"
 elif os_id == "debian":
-    pattern = re.compile(r'https?://([^/\s]+)/debian/?')
+    pattern = re.compile(r'https?://([^/\s]+)/debian/?(?=\s|$)')
     security_host = "security.debian.org"
     suffix = "debian"
 else:
@@ -38,8 +38,7 @@ def replace(match: re.Match[str]) -> str:
     return f"https://{target_host}/{suffix}/"
 
 updated = pattern.sub(replace, text)
-if updated == text:
-    raise SystemExit("no distribution mirror URL was replaced")
+# Security-only files and files already on this mirror are valid no-ops.
 candidate.write_text(updated)
 PY
 }

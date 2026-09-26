@@ -244,10 +244,15 @@
         return d.toLocaleDateString();
       }
 
+      function escapeHtml(text) {
+        return String(text ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
+      }
+
       function highlight(text) {
-        if (!state.searchQuery || !text) return text;
+        text = String(text ?? '');
+        if (!state.searchQuery) return escapeHtml(text);
         const q = state.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return text.replace(new RegExp(q, 'gi'), (m) => `<mark>${m}</mark>`);
+        return text.split(new RegExp(`(${q})`, 'gi')).map((part, i) => i % 2 ? `<mark>${escapeHtml(part)}</mark>` : escapeHtml(part)).join('');
       }
 
       function render() {
@@ -304,7 +309,7 @@
             </div>
             <div class="session-side">
               <div class="session-stats"><span class="session-length">${s.overallLength} ${t('unitEntry')}</span><span class="session-size">${formatBytes(s.totalStorageBytes)}</span></div>
-              <button class="act-delete" data-delete-id="${s.recordId}" data-armed="${delArmed}">${delArmed ? t('deleteArmed') : t('delete')}</button>
+              <button class="act-delete" data-delete-id="${escapeHtml(s.recordId)}" data-armed="${delArmed}">${delArmed ? t('deleteArmed') : t('delete')}</button>
             </div>
           `;
           li.onclick = (e) => { if (e.target.closest('[data-delete-id]')) return; state.selectedRecordId = s.recordId; state.drawerOpen = true; render(); };
@@ -321,8 +326,9 @@
           document.getElementById('metricStorageValue').textContent = formatBytes(selected.totalStorageBytes);
           document.getElementById('metricCreatedValue').textContent = new Date(selected.startedAt).toLocaleString();
           document.getElementById('metricUpdatedValue').textContent = new Date(selected.updatedAt).toLocaleString();
-          document.getElementById('drawerScroll').innerHTML = `<div class="md-section"><h3>${t('projectPath')}</h3><div class="md-block"><code>${selected.projectPath}</code></div></div><div class="md-section"><h3>${t('firstPrompt')}</h3><div class="md-block"><p>${selected.firstPrompt||'—'}</p></div></div>`;
+          document.getElementById('drawerScroll').innerHTML = `<div class="md-section"><h3>${t('projectPath')}</h3><div class="md-block"><code>${escapeHtml(selected.projectPath)}</code></div></div><div class="md-section"><h3>${t('firstPrompt')}</h3><div class="md-block"><p>${escapeHtml(selected.firstPrompt||'—')}</p></div></div>`;
         }
+        document.getElementById('emptyState').dataset.visible = !state.loading && state.filteredSessions.length === 0;
         document.getElementById('loadingState').dataset.visible = state.loading;
         document.getElementById('statusDot').dataset.ready = !state.loading;
         document.getElementById('lastUpdatedLabel').textContent = state.loading ? '...' : formatRelative(state.lastFetchedAt);
@@ -333,11 +339,12 @@
         try {
           const r = await fetch('/api/sessions');
           const data = await r.json();
+          if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
           const list = Array.isArray(data) ? data : data.sessions;
-          state.sessions = list.map((s, i) => ({ ...s, recordId: s.recordId || `rec-${i}`, overallLength: (s.userMessageCount || 0) + (s.assistantMessageCount || 0), totalStorageBytes: (s.storageBytes || 0) + (s.sessionDirStorageBytes || 0) + (s.subagentStorageBytes || 0), titleKind: s.titleSource && s.titleSource.includes('ai') ? 'explicit' : 'derived' }));
+          state.sessions = list.map((s, i) => ({ ...s, recordId: s.recordId || `rec-${i}`, overallLength: (s.userMessageCount || 0) + (s.assistantMessageCount || 0), totalStorageBytes: (s.storageBytes || 0) + (s.sessionDirStorageBytes ?? s.subagentStorageBytes ?? 0), titleKind: s.titleSource && s.titleSource.includes('ai') ? 'explicit' : 'derived' }));
           state.lastFetchedAt = new Date().toISOString();
           applyFilters();
-        } catch (e) { console.error(e); }
+        } catch (e) { alert(e.message); }
         state.loading = false; render();
         setTimeout(() => { state.isInitialLoad = false; }, 500);
       }
@@ -348,7 +355,18 @@
         res.sort((a, b) => { if (state.sortKey === 'overallLength') return (a.overallLength - b.overallLength) * m; return (a[state.sortKey] || '').toString().localeCompare((b[state.sortKey] || '').toString()) * m; });
         state.filteredSessions = res;
       }
-      async function deleteSession(s) { try { await fetch(`/api/sessions/${encodeURIComponent(s.sessionId)}`, { method: 'DELETE' }); state.sessions = state.sessions.filter(x => x.recordId !== s.recordId); applyFilters(); } catch (e) { alert(e); } state.armedDeleteRecordId = null; render(); }
+      async function deleteSession(s) {
+        try {
+          const response = await fetch(`/api/sessions/${encodeURIComponent(s.sessionId)}`, { method: 'DELETE' });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+          state.sessions = state.sessions.filter(x => x.recordId !== s.recordId);
+          if (state.selectedRecordId === s.recordId) { state.selectedRecordId = null; state.drawerOpen = false; }
+          applyFilters();
+        } catch (e) { alert(e.message); }
+        state.armedDeleteRecordId = null;
+        render();
+      }
       els.searchInput.oninput = (e) => { state.searchQuery = e.target.value; applyFilters(); render(); };
       document.getElementById('refreshButton').onclick = fetchSessions;
       document.querySelectorAll('[data-sort-chip]').forEach(c => c.onclick = () => { if (state.sortKey === c.dataset.sortChip) state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc'; else { state.sortKey = c.dataset.sortChip; state.sortDirection = 'desc'; } applyFilters(); render(); });

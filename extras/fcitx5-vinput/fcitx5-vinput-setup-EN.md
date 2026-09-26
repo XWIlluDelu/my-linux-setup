@@ -1,9 +1,9 @@
 # fcitx5-vinput Setup Notes
 
-This file records the validated local `fcitx5-vinput` voice-input setup.
+This file records the local `fcitx5-vinput` 2.3.3 voice-input setup. Its custom Bailian streaming provider, Ollama bridge, and warmup units are machine-local files, not supplied by this repository; installing the package alone does not reproduce those integrations. Check the [upstream releases](https://github.com/xifan2333/fcitx5-vinput/releases) before setting up another machine.
 Credentials remain only in `~/.config/vinput/config.json`; do not commit them.
 
-## Target state
+## Recorded configuration
 
 | Layer | Configuration |
 |---|---|
