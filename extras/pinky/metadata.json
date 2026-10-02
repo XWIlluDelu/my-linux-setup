@@ -4,5 +4,5 @@
   "description": "Pin the focused window in place or keep it always on top, marked by colored borders.",
   "shell-version": ["50"],
   "settings-schema": "org.gnome.shell.extensions.pinky",
-  "version": 5
+  "version": 7
 }
