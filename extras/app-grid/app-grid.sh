@@ -65,7 +65,7 @@ ensure_command python3
 if [[ "$MODE" == "analyze" ]]; then
   info "Analyzing GNOME application grid..." >&2
   python3 << 'PYEOF'
-import json, os, subprocess, sys
+import ast, json, os, subprocess, sys
 
 def gsettings_get(schema, key, path=None):
     cmd = ["gsettings", "get"]
@@ -80,14 +80,7 @@ def gsettings_get(schema, key, path=None):
         return ""
 
 def parse_gsettings_array(raw):
-    if not raw or raw == "@as []":
-        return []
-    items = []
-    for item in raw.strip("[]").split(","):
-        item = item.strip().strip("'")
-        if item:
-            items.append(item)
-    return items
+    return ast.literal_eval(raw) if raw and raw != "@as []" else []
 
 def scan_visible_desktop_files(excluded):
     search_paths = [
@@ -172,7 +165,7 @@ all_folder_apps = set()
 for fid in folder_ids:
     path = f"/org/gnome/desktop/app-folders/folders/{fid}/"
     name = gsettings_get("org.gnome.desktop.app-folders.folder", "name", path)
-    name = name.strip("'")
+    name = ast.literal_eval(name)
     apps_raw = gsettings_get("org.gnome.desktop.app-folders.folder", "apps", path)
     apps = parse_gsettings_array(apps_raw)
     folders[fid] = {"name": name, "apps": apps}
@@ -206,7 +199,7 @@ if [[ "$MODE" == "apply" ]]; then
 
   info "Applying folder definitions from $FOLDERS_JSON..."
   python3 - "$FOLDERS_JSON" << 'PYEOF'
-import json, os, subprocess, sys
+import ast, json, os, subprocess, sys
 
 json_path = sys.argv[1]
 with open(json_path) as f:
@@ -237,35 +230,43 @@ def gsettings_set(schema, key, value, path=None):
     cmd.extend([key, value])
     subprocess.check_call(cmd, stderr=subprocess.DEVNULL)
 
-# 1. Set folder-children
-folder_ids = [f["id"] for f in folders_def]
-children_str = "[" + ", ".join(f"'{fid}'" for fid in folder_ids) + "]"
-gsettings_set("org.gnome.desktop.app-folders", "folder-children", children_str)
-
-# 2. Configure each folder
+# Prepare the whole definition before changing settings. JSON strings and
+# string arrays are also valid GVariant text, including quotes and backslashes.
+planned_folders = []
 for folder in folders_def:
     fid = folder["id"]
     name = folder.get("name", fid)
     apps = folder.get("apps", [])
-    path = f"/org/gnome/desktop/app-folders/folders/{fid}/"
+    if not isinstance(fid, str) or not fid or "/" in fid:
+        raise ValueError("Folder id must be a nonempty path component")
+    if not isinstance(name, str):
+        raise ValueError(f"Folder {fid}: name must be a string")
+    if not isinstance(apps, list) or not all(isinstance(app, str) for app in apps):
+        raise ValueError(f"Folder {fid}: apps must be a list of desktop IDs")
 
-    existing = [a for a in apps if desktop_exists(a)]
-    skipped = [a for a in apps if not desktop_exists(a)]
+    existing = []
+    for app in apps:
+        if desktop_exists(app):
+            existing.append(app)
+        else:
+            print(f"  [skip] {app} (not found)", file=sys.stderr)
+    planned_folders.append((fid, name, existing))
 
-    for s in skipped:
-        print(f"  [skip] {s} (not found)", file=sys.stderr)
-
-    apps_str = "[" + ", ".join(f"'{a}'" for a in existing) + "]"
-    gsettings_set("org.gnome.desktop.app-folders.folder", "name", f"'{name}'", path)
-    gsettings_set("org.gnome.desktop.app-folders.folder", "apps", apps_str, path)
-    print(f"  [done] {fid}: {len(existing)} apps", file=sys.stderr)
-
-# 3. Set layout order
+folder_ids = [fid for fid, _, _ in planned_folders]
 layout_entries = ", ".join(
-    f"'{fid}': <{{'position': <{i}>}}>"
+    f"{json.dumps(fid, ensure_ascii=False)}: <{{'position': <{i}>}}>"
     for i, fid in enumerate(folder_ids)
 )
 layout_str = f"[{{{layout_entries}}}]"
+
+# Publish folder membership and layout after configuring the folders.
+for fid, name, apps in planned_folders:
+    path = f"/org/gnome/desktop/app-folders/folders/{fid}/"
+    gsettings_set("org.gnome.desktop.app-folders.folder", "name", json.dumps(name, ensure_ascii=False), path)
+    gsettings_set("org.gnome.desktop.app-folders.folder", "apps", json.dumps(apps, ensure_ascii=False), path)
+    print(f"  [done] {fid}: {len(apps)} apps", file=sys.stderr)
+
+gsettings_set("org.gnome.desktop.app-folders", "folder-children", json.dumps(folder_ids, ensure_ascii=False))
 gsettings_set("org.gnome.shell", "app-picker-layout", layout_str)
 
 # 4. Report orphans
@@ -282,9 +283,7 @@ def gsettings_get(schema, key, path=None):
         return ""
 
 def parse_gsettings_array(raw):
-    if not raw or raw == "@as []":
-        return []
-    return [item.strip().strip("'") for item in raw.strip("[]").split(",") if item.strip()]
+    return ast.literal_eval(raw) if raw and raw != "@as []" else []
 
 dock_apps = set(parse_gsettings_array(
     gsettings_get("org.gnome.shell", "favorite-apps")

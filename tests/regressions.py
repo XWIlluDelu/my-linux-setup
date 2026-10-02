@@ -83,6 +83,43 @@ run_optional_external_step app fail_app
 [[ "$(result_failed_count)" == 1 ]]
 ''')
 
+    def test_app_grid_quotes_values_and_validates_before_writing(self):
+        fake_bin = self.work / "bin"
+        fake_bin.mkdir()
+        log = self.work / "settings.jsonl"
+        name = 'O\'Reilly "笔记" \\ archive'
+        settings = {"folder-children": ["Office"], "name": name, "apps": ["writer's.desktop"], "favorite-apps": []}
+        command = fake_bin / "gsettings"
+        command.write_text('#!/usr/bin/env python3\nimport json, os, sys\n' + f'settings = {settings!r}\n' + '''
+if sys.argv[1] == "get":
+    print(json.dumps(settings[sys.argv[3]], ensure_ascii=False))
+else:
+    with open(os.environ["SETTINGS_LOG"], "a") as output:
+        output.write(json.dumps(sys.argv[2:]) + "\\n")
+''')
+        command.chmod(0o755)
+        env = {**os.environ, "HOME": str(self.work), "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"], "SETTINGS_LOG": str(log)}
+        cli = ["bash", str(ROOT / "extras/app-grid/app-grid.sh")]
+        result = subprocess.run([*cli, "--analyze"], env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = json.loads(result.stdout)["folders"]["Office"]
+        self.assertEqual(folder, {"name": name, "apps": settings["apps"]})
+
+        definitions = self.work / "folders.json"
+        folders = [{"id": "Office", "name": name, "apps": []}]
+        definitions.write_text(json.dumps({"folders": folders}))
+        result = subprocess.run([*cli, "--apply", "--folders-json", str(definitions)], env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        writes = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertEqual(json.loads(next(value for _, key, value in writes if key == "name")), name)
+
+        log.unlink()
+        folders.append({"id": "Invalid", "name": 42})
+        definitions.write_text(json.dumps({"folders": folders}))
+        result = subprocess.run([*cli, "--apply", "--folders-json", str(definitions)], env=env, text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(log.exists(), "invalid definitions must not write any settings")
+
     def test_held_nvidia_packages_are_detected(self):
         function = shell_function("drivers/nvidia/install-nvidia-cuda.sh", "detect_existing_nvidia_state")
         self.bash(function + '''

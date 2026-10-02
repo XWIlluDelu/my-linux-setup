@@ -53,8 +53,10 @@ Accepted by `--apply --folders-json FILE`:
 }
 ```
 
-- Non-existent `.desktop` files are skipped automatically
-- After applying, the remaining orphan count is printed
+- The JSON defines the complete folder list, not a patch; include every folder to keep.
+- Folder IDs are nonempty path components without `/`; names are strings and `apps` is a list of desktop IDs.
+- Non-existent `.desktop` files are skipped automatically.
+- After applying, the remaining orphan count is printed.
 
 ## User classification preferences
 
