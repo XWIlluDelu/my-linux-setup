@@ -58,5 +58,11 @@ vm.runInContext(source.replace('      fetchSessions();', '      globalThis.ui = 
   await ui.deleteSession(session);
   assert.equal(ui.state.sessions.length, 0);
   assert.equal(document.getElementById('emptyState').dataset.visible, true);
+
+  ui.state.filteredSessions = Array.from({ length: 20 }, (_, i) => ({ ...session, recordId: `row-${i}` }));
+  ui.state.isInitialLoad = true;
+  ui.render();
+  const delays = document.getElementById('sessionsBody').children.map(row => parseFloat(row.style.animationDelay) || 0);
+  assert.equal(Math.max(...delays), 200, 'list animation delay must not grow with session count');
   console.log('session UI tests: pass');
 })().catch(error => { console.error(error); process.exitCode = 1; });

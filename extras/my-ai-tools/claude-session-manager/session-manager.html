@@ -289,7 +289,7 @@
           const li = document.createElement('li');
           li.className = 'session';
           li.dataset.selected = s.recordId === state.selectedRecordId;
-          if (state.isInitialLoad) { li.dataset.animate = 'true'; li.style.animationDelay = (i * 25) + 'ms'; }
+          if (state.isInitialLoad) { li.dataset.animate = 'true'; li.style.animationDelay = (Math.min(i, 8) * 25) + 'ms'; }
           const delArmed = state.armedDeleteRecordId === s.recordId;
           
           let previewHtml = `<div class="session-preview">${highlight(s.firstPrompt || '—')}</div>`;

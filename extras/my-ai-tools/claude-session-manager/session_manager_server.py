@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -368,10 +369,7 @@ def normalize_session_records(
     history_index: dict[str, list[dict[str, Any]]],
     runtime_index: dict[str, RuntimeSessionInfo],
     source_category: str,
-) -> dict[str, Any] | None:
-    if not records or not session_id:
-        return None
-
+) -> dict[str, Any]:
     project_path: str | None = None
     started_at: str | None = None
     updated_at: str | None = None
@@ -512,46 +510,28 @@ def normalize_session_records(
     }
 
 
-def normalize_session_file(
-    path: Path,
-    history_index: dict[str, list[dict[str, Any]]],
-    runtime_index: dict[str, RuntimeSessionInfo],
-    source_category: str,
-) -> dict[str, Any] | None:
-    if not local_path(path, PROJECTS_DIR):
-        return None
-    records = parse_jsonl(path)
-    if not records:
-        return None
-    session_id = derive_session_id(path, records)
-    return normalize_session_records(
-        path, session_id, records, history_index, runtime_index, source_category
-    )
+def session_transcripts() -> Iterator[tuple[Path, str, list[dict[str, Any]]]]:
+    """Use the same ordered transcripts for display and deletion."""
+    if not PROJECTS_DIR.exists():
+        return
+    for project_dir in sorted(PROJECTS_DIR.iterdir()):
+        if not project_dir.is_dir():
+            continue
+        for path in sorted(project_dir.glob("*.jsonl")):
+            if not local_path(path, PROJECTS_DIR):
+                continue
+            records = parse_jsonl(path)
+            session_id = derive_session_id(path, records)
+            if records and session_id:
+                yield path, session_id, records
 
 
 def find_session_transcript_path(session_id: str) -> Path | None:
     if not valid_session_id(session_id):
         raise ValueError("Invalid session id")
-    if not PROJECTS_DIR.exists():
-        return None
-
-    for project_dir in PROJECTS_DIR.iterdir():
-        if not project_dir.is_dir():
-            continue
-        candidate = project_dir / f"{session_id}.jsonl"
-        if local_path(candidate, PROJECTS_DIR) and candidate.is_file():
-            return candidate
-
-    for project_dir in PROJECTS_DIR.iterdir():
-        if not project_dir.is_dir():
-            continue
-        for candidate in project_dir.glob("*.jsonl"):
-            if not local_path(candidate, PROJECTS_DIR):
-                continue
-            records = parse_jsonl(candidate)
-            if records and derive_session_id(candidate, records) == session_id:
-                return candidate
-
+    for path, candidate_id, _ in session_transcripts():
+        if candidate_id == session_id:
+            return path
     return None
 
 
@@ -703,26 +683,17 @@ def load_sessions() -> list[dict[str, Any]]:
     runtime_index = read_runtime_index()
 
     sessions_by_id: dict[str, dict[str, Any]] = {}
-    if PROJECTS_DIR.exists():
-        for project_dir in sorted(PROJECTS_DIR.iterdir()):
-            if not project_dir.is_dir():
-                continue
-            for session_path in sorted(project_dir.glob("*.jsonl")):
-                normalized = normalize_session_file(
-                    session_path, history_index, runtime_index, "claude"
-                )
-                if not normalized:
-                    continue
-                subagent_aggregate = collect_subagent_aggregate(
-                    session_path, normalized["sessionId"]
-                )
-                if subagent_aggregate:
-                    normalized.update(subagent_aggregate)
-                session_dir_bytes = compute_session_dir_bytes(
-                    session_path, normalized["sessionId"]
-                )
-                normalized["sessionDirStorageBytes"] = session_dir_bytes
-                sessions_by_id.setdefault(normalized["recordId"], normalized)
+    for session_path, session_id, records in session_transcripts():
+        if session_id in sessions_by_id:
+            continue
+        normalized = normalize_session_records(
+            session_path, session_id, records, history_index, runtime_index, "claude"
+        )
+        subagent_aggregate = collect_subagent_aggregate(session_path, session_id)
+        if subagent_aggregate:
+            normalized.update(subagent_aggregate)
+        normalized["sessionDirStorageBytes"] = compute_session_dir_bytes(session_path, session_id)
+        sessions_by_id[session_id] = normalized
 
     sessions = list(sessions_by_id.values())
 
