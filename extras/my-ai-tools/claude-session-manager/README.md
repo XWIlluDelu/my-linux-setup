@@ -46,6 +46,6 @@ Files are staged before rewriting history. If that rewrite fails, they are resto
 | `GET` | `/api/sessions` | List normalized sessions |
 | `DELETE` | `/api/sessions/{id}` | Delete one session and its associated data |
 
-Transcripts are read from `~/.claude/projects/<project>/*.jsonl`, history from `~/.claude/history.jsonl`, and runtime metadata from `~/.claude/sessions/*.json`. These are Claude Code's internal file formats, not a stable public API.
+Transcripts are read from `~/.claude/projects/<project>/*.jsonl`, history from `~/.claude/history.jsonl`, and runtime metadata from `~/.claude/sessions/*.json`. When transcripts share a session ID, the first in project/filename order is displayed and selected for deletion. These are Claude Code's internal file formats, not a stable public API.
 
 Titles prefer `ai-title`, then the first qualifying user message, then a slug, then the session ID. Storage totals include transcript bytes and the session directory once; subagent totals are a breakdown, not additional bytes.

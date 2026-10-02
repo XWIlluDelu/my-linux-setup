@@ -379,6 +379,19 @@ class SessionTests(unittest.TestCase):
         self.sidecar.parent.mkdir(parents=True)
         self.sidecar.write_text("tool output")
 
+    def test_listing_and_deletion_select_the_same_transcript(self):
+        copy = manager.PROJECTS_DIR / "a-copy" / "renamed.jsonl"
+        copy.parent.mkdir()
+        copy.write_text(self.transcript.read_text())
+        sessions = manager.load_sessions()
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0]["sourcePath"], str(copy))
+        result = manager.delete_session_record(sessions[0]["sessionId"])
+        self.assertEqual(result["deletedTranscript"], sessions[0]["sourcePath"])
+        self.assertFalse(copy.exists())
+        self.assertTrue(self.transcript.exists())
+        self.assertTrue(self.sidecar.exists())
+
     def test_successful_delete_preserves_other_history_and_permissions(self):
         result = manager.delete_session_record("session-1")
         self.assertEqual(result["deletedHistoryEntries"], 1)
