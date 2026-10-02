@@ -83,6 +83,20 @@ run_optional_external_step app fail_app
 [[ "$(result_failed_count)" == 1 ]]
 ''')
 
+    def test_ghostty_config_is_initialized_only_when_missing(self):
+        self.bash(f'source "{ROOT}/tasks/apps/external/ghostty.sh"\n' + '''
+run_as_target_user() { shift 2; "$@"; }
+TARGET_USER=test
+TARGET_HOME="$TEST_DIR"
+GHOSTTY_CONFIG_ASSET="$TEST_DIR/default-config"
+printf 'font-size = 12\\n' > "$GHOSTTY_CONFIG_ASSET"
+deploy_managed_ghostty_config
+[[ "$(<"$TEST_DIR/.config/ghostty/config")" == 'font-size = 12' ]]
+printf 'font-size = 23\\n' > "$TEST_DIR/.config/ghostty/config"
+deploy_managed_ghostty_config
+[[ "$(<"$TEST_DIR/.config/ghostty/config")" == 'font-size = 23' ]]
+''')
+
     def test_app_grid_quotes_values_and_validates_before_writing(self):
         fake_bin = self.work / "bin"
         fake_bin.mkdir()

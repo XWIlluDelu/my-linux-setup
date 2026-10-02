@@ -4,11 +4,15 @@
 
 deploy_managed_ghostty_config() {
   local config_dir target_config
-  [[ -r "$GHOSTTY_CONFIG_ASSET" ]] || return 1
-
   config_dir="$TARGET_HOME/.config/ghostty"
   target_config="$config_dir/config"
+  if [[ -e "$target_config" || -L "$target_config" ]]; then
+    info "Keeping existing Ghostty config: $target_config"
+    return 0
+  fi
+  [[ -r "$GHOSTTY_CONFIG_ASSET" ]] || return 1
 
+  info "Installing default Ghostty config: $target_config"
   run_as_target_user "$TARGET_USER" "$TARGET_HOME" mkdir -p "$config_dir" || return 1
   run_as_target_user "$TARGET_USER" "$TARGET_HOME" install -m 644 "$GHOSTTY_CONFIG_ASSET" "$target_config"
 }
@@ -151,7 +155,7 @@ install_ghostty() {
     pacman)
       if install_ghostty_via_system_package "the official Arch Linux package repository"; then
         if deploy_managed_ghostty_config; then
-          record_result ghostty "$GHOSTTY_INSTALL_STATUS" "${GHOSTTY_INSTALL_MESSAGE}; deployed the managed Ghostty config."
+          record_result ghostty "$GHOSTTY_INSTALL_STATUS" "$GHOSTTY_INSTALL_MESSAGE"
         else
           record_result ghostty failed "${GHOSTTY_INSTALL_MESSAGE}; failed to deploy the managed Ghostty config."
         fi
@@ -174,7 +178,7 @@ install_ghostty() {
       fi
       if install_ghostty_via_system_package "the Fedora COPR path documented by Ghostty"; then
         if deploy_managed_ghostty_config; then
-          record_result ghostty "$GHOSTTY_INSTALL_STATUS" "${GHOSTTY_INSTALL_MESSAGE}; deployed the managed Ghostty config."
+          record_result ghostty "$GHOSTTY_INSTALL_STATUS" "$GHOSTTY_INSTALL_MESSAGE"
         else
           record_result ghostty failed "${GHOSTTY_INSTALL_MESSAGE}; failed to deploy the managed Ghostty config."
         fi
@@ -213,7 +217,7 @@ install_ghostty() {
         "$debian_regex" \
         "dariogriffo/ghostty-debian (${selector_value})"; then
         if deploy_managed_ghostty_config; then
-          record_result ghostty "$GHOSTTY_INSTALL_STATUS" "${GHOSTTY_INSTALL_MESSAGE}; deployed the managed Ghostty config."
+          record_result ghostty "$GHOSTTY_INSTALL_STATUS" "$GHOSTTY_INSTALL_MESSAGE"
         else
           record_result ghostty failed "${GHOSTTY_INSTALL_MESSAGE}; failed to deploy the managed Ghostty config."
         fi
@@ -228,7 +232,7 @@ install_ghostty() {
         "$ubuntu_regex" \
         "mkasberg/ghostty-ubuntu (${selector_value//\\/})"; then
         if deploy_managed_ghostty_config; then
-          record_result ghostty "$GHOSTTY_INSTALL_STATUS" "${GHOSTTY_INSTALL_MESSAGE}; deployed the managed Ghostty config."
+          record_result ghostty "$GHOSTTY_INSTALL_STATUS" "$GHOSTTY_INSTALL_MESSAGE"
         else
           record_result ghostty failed "${GHOSTTY_INSTALL_MESSAGE}; failed to deploy the managed Ghostty config."
         fi
