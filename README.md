@@ -176,7 +176,7 @@ These include both runnable tools and historical workstation records. Version nu
 | `extras/edge-sync-fix/` | Edge on Linux sync failure investigation and fix |
 | `extras/fcitx5-vinput/` | vinput 2.4 Bailian / Gemini gateway configuration and paired profile switching |
 | `extras/ghostty-default-terminal/` | GNOME `xdg-terminal-exec` default terminal setup |
-| `extras/pinky/` | Pinky GNOME Shell extension: shortcut to pin window position and size |
+| `extras/pinky/` | Pinky GNOME Shell extension: pin window geometry or toggle always-on-top |
 | `extras/nautilus-enhancements/` | Nautilus `Open in Terminal` and `Copy Path` enhancements |
 | `extras/psychtoolbox/` | Psychtoolbox 3 local install notes |
 | `extras/wemeet-screen-share-fix/` | Wemeet screen-share black-screen fix |
