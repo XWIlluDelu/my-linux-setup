@@ -300,7 +300,7 @@ prepare_grub_snapshot_boot_entry() {
   [[ -n "$kernel_source" ]] || die "Could not find a kernel image inside rollback snapshot ${ROLLBACK_NEW_SNAPSHOT}."
 
   initrd_source="initrd.img-${kernel_source#vmlinuz-}"
-  [[ -f "$TOP_MNT/$ROLLBACK_TARGET_SUBVOL/boot/$initrd_source" ]] || die "Could not find matching initrd '$initrd_source' inside rollback snapshot ${ROLLBACK_NEW_SNAPSHOT}."
+  as_root test -f "$TOP_MNT/$ROLLBACK_TARGET_SUBVOL/boot/$initrd_source" || die "Could not find matching initrd '$initrd_source' inside rollback snapshot ${ROLLBACK_NEW_SNAPSHOT}."
 
   kernel_rel="/${ROLLBACK_TARGET_SUBVOL}/boot/${kernel_source}"
   initrd_rel="/${ROLLBACK_TARGET_SUBVOL}/boot/${initrd_source}"
