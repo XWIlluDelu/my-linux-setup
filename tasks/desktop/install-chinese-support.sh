@@ -30,6 +30,7 @@ Usage:
   install-chinese-support.sh [--check] [--apply]
 
 Notes:
+  - Fresh-install task: replaces Fcitx/Rime configuration.
   - Default mode is --check.
   - Supports apt, dnf, zypper, and pacman with distro-specific package mappings.
 EOF
@@ -64,6 +65,7 @@ chinese_support_required_packages() {
         fcitx5-gtk \
         fcitx5-qt \
         fcitx5-chinese-addons \
+        fcitx5-rime \
         fontconfig \
         google-noto-sans-cjk-fonts \
         google-noto-color-emoji-fonts \
@@ -78,6 +80,7 @@ chinese_support_required_packages() {
         fcitx5-gtk4 \
         fcitx5-qt5 \
         fcitx5-chinese-addons \
+        fcitx5-rime \
         fontconfig \
         google-noto-sans-cjk-fonts \
         google-noto-coloremoji-fonts \
@@ -91,6 +94,7 @@ chinese_support_required_packages() {
         fcitx5-gtk \
         fcitx5-qt \
         fcitx5-chinese-addons \
+        fcitx5-rime \
         fontconfig \
         jack2 \
         noto-fonts-cjk \
