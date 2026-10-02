@@ -83,6 +83,14 @@ run_optional_external_step app fail_app
 [[ "$(result_failed_count)" == 1 ]]
 ''')
 
+    def test_chinese_support_installs_rime_for_each_package_manager(self):
+        function = shell_function("tasks/desktop/install-chinese-support.sh", "chinese_support_required_packages")
+        self.bash(function + '''
+for PKG_MANAGER in apt-get dnf zypper pacman; do
+  chinese_support_required_packages | grep -qx fcitx5-rime
+done
+''')
+
     def test_ghostty_config_is_initialized_only_when_missing(self):
         self.bash(f'source "{ROOT}/tasks/apps/external/ghostty.sh"\n' + '''
 run_as_target_user() { shift 2; "$@"; }
