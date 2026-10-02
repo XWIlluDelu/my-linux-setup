@@ -4,7 +4,7 @@ Goal:
 
 - Get local SSH working
 - Pin it to `2222`
-- Use public-key login
+- Use public-key-only login; disable password authentication after bootstrap
 - Optionally stop `k3s` to reclaim memory
 
 ## 1. Open a temporary `2222` in the web SSH
@@ -40,7 +40,13 @@ chmod 600 /root/.ssh/authorized_keys
 chown -R root:root /root/.ssh
 ```
 
-## 3. Persist `2222`
+Verify public-key login from a new local terminal before changing authentication:
+
+```bash
+ssh -o PreferredAuthentications=publickey -p 2222 root@<server-ip>
+```
+
+## 3. Persist `2222` and key-only authentication
 
 On the server:
 
@@ -48,9 +54,10 @@ On the server:
 sudo tee /etc/ssh/sshd_config.d/99-zeabur-dual-port.conf >/dev/null <<'EOF'
 Port 22
 Port 2222
-PermitRootLogin yes
+PermitRootLogin prohibit-password
 PubkeyAuthentication yes
-PasswordAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
 EOF
 
 sudo sshd -t
@@ -103,6 +110,7 @@ Server:
 ```bash
 ss -tnlp | grep -E ':(22|2222)\b'
 systemctl is-active ssh.service
+sudo sshd -T | grep -E '^(permitrootlogin|pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication) '
 systemctl is-active k3s.service
 free -h
 ```
