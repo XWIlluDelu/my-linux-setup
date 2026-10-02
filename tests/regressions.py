@@ -192,6 +192,30 @@ preflight_check_stage1_layout
 [[ "$PREFLIGHT_ERRORS" == 0 ]]
 ''')
 
+    def test_rollback_reads_boot_artifacts_with_root_permissions(self):
+        script = (ROOT / "commands/snapshot/rollback.sh").read_text()
+        function = script[script.index("prepare_grub_snapshot_boot_entry() {"):script.index("\ninstall_grub_snapshot_boot_entry() {")]
+        self.bash(function + '''
+stable_root_subvol_path() { printf '@rootfs'; }
+stable_snapshots_subvol_path() { printf '@rootfs/.snapshots'; }
+current_root_uuid() { printf fake-uuid; }
+current_root_device() { printf /dev/fake; }
+current_kernel_args_for_rollback() { :; }
+grub-probe() { printf gpt; }
+mktemp() { printf '%s' "$TEST_DIR"; }
+run_as_root() { [[ "$1" == mount ]]; }
+as_root() {
+  case "$1" in
+    find) printf 'vmlinuz-fixture\\n' ;;
+    test) [[ "$2" == -f && "$3" == "$TEST_DIR/top/@rootfs/.snapshots/42/snapshot/boot/initrd.img-fixture" ]] ;;
+    *) return 1 ;;
+  esac
+}
+ROLLBACK_NEW_SNAPSHOT=42
+prepare_grub_snapshot_boot_entry
+[[ "$ROLLBACK_INITRD_PATH" == /@rootfs/.snapshots/42/snapshot/boot/initrd.img-fixture ]]
+''')
+
     def test_rollback_entry_preserves_unrelated_grub_entries(self):
         function = shell_function("commands/snapshot/rollback.sh", "install_grub_snapshot_boot_entry")
         self.bash(function + '''
