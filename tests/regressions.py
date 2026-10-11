@@ -173,18 +173,83 @@ if install_packages example; then exit 1; fi
 [[ ! -e "$TEST_DIR/installed" ]]
 ''')
 
-    def test_microsoft_key_failure_precedes_repository_changes(self):
-        function = shell_function("tasks/apps/install-apt-apps.sh", "setup_microsoft_repos")
-        self.bash(function + '''
-export TMPDIR="$TEST_DIR"
+    def test_repository_key_failure_precedes_repository_changes(self):
+        for name in ("setup_microsoft_repos", "setup_chrome_repo"):
+            with self.subTest(repository=name):
+                function = shell_function("tasks/apps/install-apt-apps.sh", name)
+                self.bash(function + '''
 KEY_URL=https://example.invalid/key
+CHROME_KEY_URL=https://example.invalid/key
+TMP_KEY="$TEST_DIR/key"
 curl() { return 1; }
 gpg() { return 0; }
 as_root() { touch "$TEST_DIR/changed"; }
 prune_conflicting_microsoft_sources() { touch "$TEST_DIR/changed"; }
-if setup_microsoft_repos; then exit 1; fi
+''' + f'if {name}; then exit 1; fi\n' + '''
 [[ ! -e "$TEST_DIR/changed" ]]
 ''')
+
+    def test_chrome_repository_replaces_deb822_with_signed_source(self):
+        function = shell_function("tasks/apps/install-apt-apps.sh", "setup_chrome_repo")
+        self.bash(function + '''
+CHROME_KEY_URL=https://example.invalid/key
+CHROME_KEYRING_PATH="$TEST_DIR/google-chrome.gpg"
+CHROME_LIST="$TEST_DIR/google-chrome.list"
+CHROME_DEB822_LIST="$TEST_DIR/google-chrome.sources"
+TMP_KEY="$TEST_DIR/key"
+printf 'old source\\n' > "$CHROME_DEB822_LIST"
+curl() { printf 'test key'; }
+gpg() { cat; }
+as_root() {
+  if [[ "$1" == install ]]; then
+    cp "${@: -2}"
+  else
+    "$@"
+  fi
+}
+setup_chrome_repo
+[[ ! -e "$CHROME_DEB822_LIST" ]]
+[[ "$(<"$CHROME_KEYRING_PATH")" == 'test key' ]]
+[[ "$(<"$CHROME_LIST")" == "deb [arch=amd64 signed-by=$CHROME_KEYRING_PATH] https://dl.google.com/linux/chrome/deb/ stable main" ]]
+''')
+
+    def test_chrome_install_results_and_independent_repository_state(self):
+        function = shell_function("tasks/apps/install-apt-apps.sh", "install_chrome")
+        self.bash(function + '''
+INSTALL_CHROME=1
+ARCH=amd64
+MICROSOFT_REPOS_READY=0
+CHROME_REPO_READY=1
+package_available() { [[ "$1" == google-chrome-stable ]]; }
+dpkg_package_installed() { return "$INSTALLED_RC"; }
+apt_noninteractive() {
+  [[ "$*" == 'install -y google-chrome-stable' ]]
+  return "$INSTALL_RC"
+}
+record_result() { printf '%s %s' "$1" "$2"; }
+INSTALLED_RC=1 INSTALL_RC=0
+[[ "$(install_chrome)" == 'chrome installed' ]]
+INSTALLED_RC=0
+[[ "$(install_chrome)" == 'chrome updated' ]]
+INSTALL_RC=1
+[[ "$(install_chrome)" == 'chrome failed' ]]
+CHROME_REPO_READY=0
+[[ -z "$(install_chrome)" ]]
+CHROME_REPO_READY=1 ARCH=arm64
+[[ "$(install_chrome)" == 'chrome skipped_unsupported' ]]
+''')
+
+    def test_stage2_browser_profile_defaults(self):
+        for profile, selected in (("desktop", "1"), ("server", "0")):
+            with self.subTest(profile=profile):
+                result = subprocess.run(
+                    ["bash", str(ROOT / "manage.sh"), "setup", "stage2", "--check", "--profile", profile],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"--chrome {selected}", result.stdout)
+                self.assertNotIn("--edge", result.stdout)
+                self.assertNotIn("obsidian", result.stdout.lower())
 
     def test_stage2_requires_booted_layout(self):
         self.bash('''

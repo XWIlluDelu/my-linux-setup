@@ -1,4 +1,6 @@
-# Microsoft Edge sync failures on Linux
+# Microsoft Edge sync failures on Linux — historical record
+
+Edge is no longer part of this setup; Google Chrome is the selected browser. This document preserves the earlier incident findings.
 
 Evidence-based record for two sync incidents on this workstation. The same visible symptoms crossed different failure layers, so this document is a diagnostic record, not a recipe to execute wholesale.
 

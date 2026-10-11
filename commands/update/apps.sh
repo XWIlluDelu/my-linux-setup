@@ -17,12 +17,11 @@ SHELL_ENV_MANAGED_DETECTED=0
 INSTALL_SHELL_ENV=0
 INSTALL_DESKTOP_ESSENTIALS=0
 INSTALL_VSCODE=0
-INSTALL_EDGE=0
+INSTALL_CHROME=0
 INSTALL_FLATPAK=0
 INSTALL_WECHAT=0
 INSTALL_CLASH_VERGE_REV=0
 INSTALL_ZOTERO=0
-INSTALL_OBSIDIAN=0
 INSTALL_GHOSTTY=0
 INSTALL_MAPLE_FONT=0
 INSTALL_MINIFORGE=0
@@ -94,23 +93,11 @@ managed_zotero_tarball_installed() {
   [[ -x "$TARGET_HOME/.local/opt/zotero/zotero" ]]
 }
 
-managed_obsidian_appimage_installed() {
-  [[ -x "$TARGET_HOME/.local/opt/obsidian/Obsidian.AppImage" ]]
-}
-
 external_backend_zotero() {
   if supports_debian_apt_workflow "$(detect_update_pkg_manager)"; then
     printf 'apt\n'
   else
     printf 'tarball\n'
-  fi
-}
-
-external_backend_obsidian() {
-  if supports_debian_apt_workflow "$(detect_update_pkg_manager)"; then
-    printf 'apt\n'
-  else
-    printf 'appimage\n'
   fi
 }
 
@@ -201,8 +188,8 @@ detect_installed_apps() {
       INSTALL_VSCODE=1
     fi
 
-    if dpkg_package_installed microsoft-edge-stable; then
-      INSTALL_EDGE=1
+    if dpkg_package_installed google-chrome-stable; then
+      INSTALL_CHROME=1
     fi
   fi
 
@@ -237,19 +224,6 @@ detect_installed_apps() {
     tarball)
       if managed_zotero_tarball_installed; then
         INSTALL_ZOTERO=1
-      fi
-      ;;
-  esac
-
-  case "$(external_backend_obsidian)" in
-    apt)
-      if dpkg_package_installed obsidian; then
-        INSTALL_OBSIDIAN=1
-      fi
-      ;;
-    appimage)
-      if managed_obsidian_appimage_installed; then
-        INSTALL_OBSIDIAN=1
       fi
       ;;
   esac
@@ -345,15 +319,11 @@ collect_update_selection() {
 }
 
 selected_updates_need_sudo() {
-  if [[ "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 || "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 || "$INSTALL_FLATPAK" -eq 1 || "$INSTALL_WECHAT" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 ]]; then
+  if [[ "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 || "$INSTALL_VSCODE" -eq 1 || "$INSTALL_CHROME" -eq 1 || "$INSTALL_FLATPAK" -eq 1 || "$INSTALL_WECHAT" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 ]]; then
     return 0
   fi
 
   if [[ "$INSTALL_ZOTERO" -eq 1 && "$(external_backend_zotero)" == "apt" ]]; then
-    return 0
-  fi
-
-  if [[ "$INSTALL_OBSIDIAN" -eq 1 && "$(external_backend_obsidian)" == "apt" ]]; then
     return 0
   fi
 
@@ -369,19 +339,15 @@ selected_updates_need_apt_workflow() {
     return 1
   fi
 
-  [[ "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 || "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 || "$INSTALL_WECHAT" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_ZOTERO" -eq 1 || "$INSTALL_OBSIDIAN" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 ]]
+  [[ "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 || "$INSTALL_VSCODE" -eq 1 || "$INSTALL_CHROME" -eq 1 || "$INSTALL_WECHAT" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_ZOTERO" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 ]]
 }
 
 selected_updates_need_package_manager() {
-  if [[ "$INSTALL_SHELL_ENV" -eq 1 || "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 || "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 || "$INSTALL_FLATPAK" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 ]]; then
+  if [[ "$INSTALL_SHELL_ENV" -eq 1 || "$INSTALL_DESKTOP_ESSENTIALS" -eq 1 || "$INSTALL_VSCODE" -eq 1 || "$INSTALL_CHROME" -eq 1 || "$INSTALL_FLATPAK" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 ]]; then
     return 0
   fi
 
   if [[ "$INSTALL_ZOTERO" -eq 1 && "$(external_backend_zotero)" == "apt" ]]; then
-    return 0
-  fi
-
-  if [[ "$INSTALL_OBSIDIAN" -eq 1 && "$(external_backend_obsidian)" == "apt" ]]; then
     return 0
   fi
 
@@ -414,10 +380,16 @@ run_app_update_preflight() {
     "https://deb.debian.org" \
     "https://github.com"
 
-  if [[ "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 ]]; then
+  if [[ "$INSTALL_VSCODE" -eq 1 ]]; then
     preflight_check_optional_network_access \
       "Microsoft package repository" \
       "https://packages.microsoft.com"
+  fi
+
+  if [[ "$INSTALL_CHROME" -eq 1 ]]; then
+    preflight_check_optional_network_access \
+      "Google Chrome package repository" \
+      "https://dl.google.com"
   fi
 
   if [[ "$INSTALL_WECHAT" -eq 1 ]]; then
@@ -432,7 +404,7 @@ run_app_update_preflight() {
       "https://flathub.org"
   fi
 
-  if [[ "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_OBSIDIAN" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 || "$INSTALL_MAPLE_FONT" -eq 1 || "$INSTALL_MINIFORGE" -eq 1 ]]; then
+  if [[ "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 || "$INSTALL_MAPLE_FONT" -eq 1 || "$INSTALL_MINIFORGE" -eq 1 ]]; then
     preflight_check_optional_network_access \
       "GitHub release services" \
       "https://api.github.com" \
@@ -550,18 +522,17 @@ if [[ "$RUN_MODE" != "apply" ]]; then
   printf '  1. %s (shell_env=%s)\n' \
     "$shell_env_preview_cmd" \
     "$INSTALL_SHELL_ENV"
-  printf '  2. %s/tasks/apps/install-apt-apps.sh --apply --desktop-essentials %s --vscode %s --edge %s\n' \
+  printf '  2. %s/tasks/apps/install-apt-apps.sh --apply --desktop-essentials %s --vscode %s --chrome %s\n' \
     "$ROOT_DIR" \
     "$INSTALL_DESKTOP_ESSENTIALS" \
     "$INSTALL_VSCODE" \
-    "$INSTALL_EDGE"
-  printf '  3. %s/tasks/apps/install-external-apps.sh --apply --flatpak %s --wechat %s --clash-verge-rev %s --zotero %s --obsidian %s --ghostty %s --maple-font %s --miniforge %s\n' \
+    "$INSTALL_CHROME"
+  printf '  3. %s/tasks/apps/install-external-apps.sh --apply --flatpak %s --wechat %s --clash-verge-rev %s --zotero %s --ghostty %s --maple-font %s --miniforge %s\n' \
     "$ROOT_DIR" \
     "$INSTALL_FLATPAK" \
     "$INSTALL_WECHAT" \
     "$INSTALL_CLASH_VERGE_REV" \
     "$INSTALL_ZOTERO" \
-    "$INSTALL_OBSIDIAN" \
     "$INSTALL_GHOSTTY" \
     "$INSTALL_MAPLE_FONT" \
     "$INSTALL_MINIFORGE"
@@ -640,7 +611,7 @@ if has_selected_packaged_apps; then
     --apply \
     --desktop-essentials "$INSTALL_DESKTOP_ESSENTIALS" \
     --vscode "$INSTALL_VSCODE" \
-    --edge "$INSTALL_EDGE"; then
+    --chrome "$INSTALL_CHROME"; then
     warn "The packaged app update step exited unexpectedly."
     record_result packaged_apps_runner failed "The packaged app update runner exited unexpectedly."
   fi
@@ -654,7 +625,6 @@ if has_selected_managed_apps; then
     --wechat "$INSTALL_WECHAT" \
     --clash-verge-rev "$INSTALL_CLASH_VERGE_REV" \
     --zotero "$INSTALL_ZOTERO" \
-    --obsidian "$INSTALL_OBSIDIAN" \
     --ghostty "$INSTALL_GHOSTTY" \
     --maple-font "$INSTALL_MAPLE_FONT" \
     --miniforge "$INSTALL_MINIFORGE"; then

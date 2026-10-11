@@ -81,7 +81,7 @@ The user's habitual folder classifications (the agent should generate JSON from 
 
 ### Office — documents / knowledge management
 
-- Obsidian, Zotero, the LibreOffice suite
+- Zotero, the LibreOffice suite
 - Other notes, writing, reading, and office tools go here first
 
 ### NVIDIA — GPU development and debugging tools
@@ -102,7 +102,7 @@ The user's habitual folder classifications (the agent should generate JSON from 
 
 - Classifications should follow the apps currently installed on this machine; do not apply a fixed template rigidly. Folders may be omitted when no matching app exists.
 - The user prefers to keep `simple-scan`, so it should go into `Utilities` first.
-- The user prefers to keep `LibreOffice`, and group it with `Obsidian` and `Zotero` under `Office` first.
+- The user prefers to keep `LibreOffice`, and group it with `Zotero` under `Office` first.
 - The user prefers the newer `papers` as document viewer; only treat `evince` as removable when both `evince` and `papers` exist. If only one remains, keep it.
 - The user prefers to minimize low-value default applets; if `xterm`, `uxterm`, `Text Editor`, or `Calculator` still appear, they are low-priority keepers and should not take prominent positions.
 - If `WeChat`, `Clash Verge`, and remote-connection apps coexist, put them in `Online` first, not `System`.

@@ -20,12 +20,11 @@ INSTALL_SHELL_ENV=1
 INSTALL_DESKTOP_ESSENTIALS=1
 INSTALL_CHINESE_SUPPORT=1
 INSTALL_VSCODE=1
-INSTALL_EDGE=1
+INSTALL_CHROME=1
 INSTALL_FLATPAK=0
 INSTALL_WECHAT=0
 INSTALL_CLASH_VERGE_REV=0
 INSTALL_ZOTERO=0
-INSTALL_OBSIDIAN=0
 INSTALL_GHOSTTY=0
 INSTALL_MAPLE_FONT=0
 INSTALL_MINIFORGE=0
@@ -61,7 +60,6 @@ Options:
 EOF
 }
 
-
 apply_profile_defaults() {
   case "$INSTALL_PROFILE" in
     desktop)
@@ -69,12 +67,11 @@ apply_profile_defaults() {
       INSTALL_DESKTOP_ESSENTIALS=1
       INSTALL_CHINESE_SUPPORT=1
       INSTALL_VSCODE=1
-      INSTALL_EDGE=1
+      INSTALL_CHROME=1
       INSTALL_FLATPAK=0
       INSTALL_WECHAT=0
       INSTALL_CLASH_VERGE_REV=0
       INSTALL_ZOTERO=0
-      INSTALL_OBSIDIAN=0
       INSTALL_GHOSTTY=0
       INSTALL_MAPLE_FONT=0
       INSTALL_MINIFORGE=0
@@ -85,12 +82,11 @@ apply_profile_defaults() {
       INSTALL_DESKTOP_ESSENTIALS=0
       INSTALL_CHINESE_SUPPORT=0
       INSTALL_VSCODE=0
-      INSTALL_EDGE=0
+      INSTALL_CHROME=0
       INSTALL_FLATPAK=0
       INSTALL_WECHAT=0
       INSTALL_CLASH_VERGE_REV=0
       INSTALL_ZOTERO=0
-      INSTALL_OBSIDIAN=0
       INSTALL_GHOSTTY=0
       INSTALL_MAPLE_FONT=0
       INSTALL_MINIFORGE=0
@@ -188,7 +184,7 @@ collect_selection_with_whiptail() {
     whiptail \
       --title "Linux Setup Stage 2" \
       --checklist "Select what to install after the Fresh snapshot.\n\nKeys: ↑↓ move, Space toggle, Tab switch buttons, Enter confirm, Esc cancel." \
-      24 90 14 \
+      24 90 13 \
       "${checklist_args[@]}" \
       3>&1 1>&2 2>&3
   )" || die "Stage 2 selection cancelled."
@@ -328,8 +324,8 @@ This was a check run. Stage 2 would execute in this order:
   4. $ROOT_DIR/tasks/system/install-base-tools.sh --apply
   5. $ROOT_DIR/tasks/shell/install-shell-environment.sh --apply --profile $INSTALL_PROFILE
   6. $ROOT_DIR/tasks/desktop/install-chinese-support.sh --apply
-  7. $ROOT_DIR/tasks/apps/install-apt-apps.sh --apply --desktop-essentials $INSTALL_DESKTOP_ESSENTIALS --vscode $INSTALL_VSCODE --edge $INSTALL_EDGE
-  8. $ROOT_DIR/tasks/apps/install-external-apps.sh --apply --flatpak $INSTALL_FLATPAK --wechat $INSTALL_WECHAT --clash-verge-rev $INSTALL_CLASH_VERGE_REV --zotero $INSTALL_ZOTERO --obsidian $INSTALL_OBSIDIAN --ghostty $INSTALL_GHOSTTY --maple-font $INSTALL_MAPLE_FONT --miniforge $INSTALL_MINIFORGE
+  7. $ROOT_DIR/tasks/apps/install-apt-apps.sh --apply --desktop-essentials $INSTALL_DESKTOP_ESSENTIALS --vscode $INSTALL_VSCODE --chrome $INSTALL_CHROME
+  8. $ROOT_DIR/tasks/apps/install-external-apps.sh --apply --flatpak $INSTALL_FLATPAK --wechat $INSTALL_WECHAT --clash-verge-rev $INSTALL_CLASH_VERGE_REV --zotero $INSTALL_ZOTERO --ghostty $INSTALL_GHOSTTY --maple-font $INSTALL_MAPLE_FONT --miniforge $INSTALL_MINIFORGE
   9. ${nvidia_preview}
  10. $ROOT_DIR/tasks/system/cleanup-system.sh --apply
 
@@ -378,10 +374,16 @@ run_stage2_preflight() {
   esac
   preflight_check_grub_preseed
 
-  if [[ "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 ]]; then
+  if [[ "$INSTALL_VSCODE" -eq 1 ]]; then
     preflight_check_optional_network_access \
       "Microsoft package repository" \
       "https://packages.microsoft.com"
+  fi
+
+  if [[ "$INSTALL_CHROME" -eq 1 ]]; then
+    preflight_check_optional_network_access \
+      "Google Chrome package repository" \
+      "https://dl.google.com"
   fi
 
   if [[ "$INSTALL_SHELL_ENV" -eq 1 ]]; then
@@ -403,7 +405,7 @@ run_stage2_preflight() {
       "https://dldir1v6.qq.com"
   fi
 
-  if [[ "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_OBSIDIAN" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 || "$INSTALL_MAPLE_FONT" -eq 1 || "$INSTALL_MINIFORGE" -eq 1 ]]; then
+  if [[ "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 || "$INSTALL_MAPLE_FONT" -eq 1 || "$INSTALL_MINIFORGE" -eq 1 ]]; then
     preflight_check_optional_network_access \
       "GitHub release services" \
       "https://api.github.com" \
@@ -550,7 +552,7 @@ if ! bash "$ROOT_DIR/tasks/apps/install-apt-apps.sh" \
   --apply \
   --desktop-essentials "$INSTALL_DESKTOP_ESSENTIALS" \
   --vscode "$INSTALL_VSCODE" \
-  --edge "$INSTALL_EDGE"; then
+  --chrome "$INSTALL_CHROME"; then
   warn "Packaged app script failed before it could finish recording per-item results."
   record_result apt_apps_runner failed "The packaged app installer exited unexpectedly."
 fi
@@ -562,7 +564,6 @@ if ! bash "$ROOT_DIR/tasks/apps/install-external-apps.sh" \
   --wechat "$INSTALL_WECHAT" \
   --clash-verge-rev "$INSTALL_CLASH_VERGE_REV" \
   --zotero "$INSTALL_ZOTERO" \
-  --obsidian "$INSTALL_OBSIDIAN" \
   --ghostty "$INSTALL_GHOSTTY" \
   --maple-font "$INSTALL_MAPLE_FONT" \
   --miniforge "$INSTALL_MINIFORGE"; then

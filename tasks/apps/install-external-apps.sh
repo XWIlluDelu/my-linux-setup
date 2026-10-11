@@ -16,7 +16,6 @@ LOCAL_BIN_DIR=""
 LOCAL_APPLICATIONS_DIR=""
 LOCAL_ICON_DIR=""
 ZOTERO_INSTALL_DIR=""
-OBSIDIAN_INSTALL_DIR=""
 # Allow an explicit override, but otherwise derive the basename from the current upstream installer and only add a leading dot under $HOME.
 MINIFORGE_PREFIX_OVERRIDE="${MINIFORGE_PREFIX:-}"
 TARGET_USER=""
@@ -33,7 +32,6 @@ INSTALL_FLATPAK=0
 INSTALL_WECHAT=0
 INSTALL_CLASH_VERGE_REV=0
 INSTALL_ZOTERO=0
-INSTALL_OBSIDIAN=0
 INSTALL_GHOSTTY=0
 INSTALL_MAPLE_FONT=0
 INSTALL_MINIFORGE=0
@@ -58,7 +56,6 @@ Usage:
     [--wechat 0|1]
     [--clash-verge-rev 0|1]
     [--zotero 0|1]
-    [--obsidian 0|1]
     [--ghostty 0|1]
     [--maple-font 0|1]
     [--miniforge 0|1]
@@ -67,7 +64,7 @@ Notes:
   - Default mode is --check.
   - Flatpak, Maple Font, and Miniforge are designed to work across apt, dnf, zypper, and pacman systems.
   - WeChat remains official-.deb-only.
-  - Zotero, Obsidian, Clash Verge Rev, and Ghostty follow the official installation path documented by each project for the current distro when available.
+  - Zotero, Clash Verge Rev, and Ghostty follow the official installation path documented by each project for the current distro when available.
 EOF
 }
 
@@ -118,7 +115,6 @@ record_disabled_results() {
   record_skip_if_not_selected "$INSTALL_WECHAT" wechat
   record_skip_if_not_selected "$INSTALL_CLASH_VERGE_REV" clash_verge_rev
   record_skip_if_not_selected "$INSTALL_ZOTERO" zotero
-  record_skip_if_not_selected "$INSTALL_OBSIDIAN" obsidian
   record_skip_if_not_selected "$INSTALL_GHOSTTY" ghostty
   record_skip_if_not_selected "$INSTALL_MAPLE_FONT" maple_font
   record_skip_if_not_selected "$INSTALL_MINIFORGE" miniforge
@@ -150,7 +146,7 @@ skip_with_official_guidance() {
 }
 
 selected_external_steps_need_sudo() {
-  [[ "$INSTALL_FLATPAK" -eq 1 || "$INSTALL_WECHAT" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_ZOTERO" -eq 1 || "$INSTALL_OBSIDIAN" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 ]]
+  [[ "$INSTALL_FLATPAK" -eq 1 || "$INSTALL_WECHAT" -eq 1 || "$INSTALL_CLASH_VERGE_REV" -eq 1 || "$INSTALL_ZOTERO" -eq 1 || "$INSTALL_GHOSTTY" -eq 1 ]]
 }
 
 installed_version_or_empty() {
@@ -367,11 +363,6 @@ while [[ $# -gt 0 ]]; do
       INSTALL_ZOTERO="$(parse_bool "$1" "$2")"
       shift
       ;;
-    --obsidian)
-      [[ $# -ge 2 ]] || die "--obsidian requires a value"
-      INSTALL_OBSIDIAN="$(parse_bool "$1" "$2")"
-      shift
-      ;;
     --ghostty)
       [[ $# -ge 2 ]] || die "--ghostty requires a value"
       INSTALL_GHOSTTY="$(parse_bool "$1" "$2")"
@@ -409,7 +400,6 @@ LOCAL_BIN_DIR="$TARGET_HOME/.local/bin"
 LOCAL_APPLICATIONS_DIR="$TARGET_HOME/.local/share/applications"
 LOCAL_ICON_DIR="$TARGET_HOME/.local/share/icons/hicolor/512x512/apps"
 ZOTERO_INSTALL_DIR="$LOCAL_APP_ROOT/zotero"
-OBSIDIAN_INSTALL_DIR="$LOCAL_APP_ROOT/obsidian"
 detect_external_pkg_manager
 
 if [[ "$APPLY" -ne 1 ]]; then
@@ -419,17 +409,15 @@ This was a check run. The script would:
   2. Install WeChat from the official .deb when selected
   3. Detect, download, and install Clash Verge Rev via the official package path for this distro when selected
   4. Install Zotero through zotero-deb on Debian/Ubuntu, or the official tarball elsewhere, when selected
-  5. Install Obsidian from the official .deb on Debian/Ubuntu, or the official AppImage elsewhere, when selected
-  6. Install Ghostty from the distro path documented by Ghostty when available, then deploy the managed Ghostty config from this repository
-  7. Detect, install, and refresh Maple Mono NF CN unhinted when selected
-  8. Detect, download, and install Miniforge to a hidden home prefix derived from the upstream default when selected
+  5. Install Ghostty from the distro path documented by Ghostty when available, then deploy the managed Ghostty config from this repository
+  6. Detect, install, and refresh Maple Mono NF CN unhinted when selected
+  7. Detect, download, and install Miniforge to a hidden home prefix derived from the upstream default when selected
 
 Current selection:
   - flatpak=$INSTALL_FLATPAK
   - wechat=$INSTALL_WECHAT
   - clash_verge_rev=$INSTALL_CLASH_VERGE_REV
   - zotero=$INSTALL_ZOTERO
-  - obsidian=$INSTALL_OBSIDIAN
   - ghostty=$INSTALL_GHOSTTY
   - maple_font=$INSTALL_MAPLE_FONT
   - miniforge=$INSTALL_MINIFORGE
@@ -464,7 +452,6 @@ run_optional_external_step flatpak install_flatpak_stack
 run_optional_external_step wechat install_wechat
 run_optional_external_step clash_verge_rev install_clash_verge_rev
 run_optional_external_step zotero install_zotero
-run_optional_external_step obsidian install_obsidian
 run_optional_external_step ghostty install_ghostty
 run_optional_external_step maple_font install_maple_font
 run_optional_external_step miniforge install_miniforge

@@ -10,14 +10,18 @@ KEY_URL="https://packages.microsoft.com/keys/microsoft.asc"
 KEYRING_PATH="/usr/share/keyrings/microsoft.gpg"
 VSCODE_LIST="/etc/apt/sources.list.d/vscode.list"
 VSCODE_DEB822_LIST="/etc/apt/sources.list.d/vscode.sources"
-EDGE_LIST="/etc/apt/sources.list.d/microsoft-edge.list"
+CHROME_KEY_URL="https://dl.google.com/linux/linux_signing_key.pub"
+CHROME_KEYRING_PATH="/usr/share/keyrings/google-chrome.gpg"
+CHROME_LIST="/etc/apt/sources.list.d/google-chrome.list"
+CHROME_DEB822_LIST="/etc/apt/sources.list.d/google-chrome.sources"
 TMP_KEY=""
 RESULT_LOG_OWNED=0
 
 DESKTOP_ESSENTIALS=1
 INSTALL_VSCODE=1
-INSTALL_EDGE=1
+INSTALL_CHROME=1
 MICROSOFT_REPOS_READY=1
+CHROME_REPO_READY=1
 
 cleanup() {
   if [[ -n "${TMP_KEY:-}" && -f "${TMP_KEY:-}" ]]; then
@@ -37,7 +41,7 @@ Usage:
   install-apt-apps.sh [--check] [--apply]
     [--desktop-essentials 0|1]
     [--vscode 0|1]
-    [--edge 0|1]
+    [--chrome 0|1]
 
 Notes:
   - Default mode is --check.
@@ -62,21 +66,18 @@ record_result_for_disabled_items() {
   if [[ "$INSTALL_VSCODE" -eq 0 ]]; then
     record_result vscode skipped_not_selected "Skipped by stage2 selection."
   fi
-  if [[ "$INSTALL_EDGE" -eq 0 ]]; then
-    record_result edge skipped_not_selected "Skipped by stage2 selection."
+  if [[ "$INSTALL_CHROME" -eq 0 ]]; then
+    record_result chrome skipped_not_selected "Skipped by stage2 selection."
   fi
 }
 
-mark_repo_failure() {
+mark_microsoft_repo_failure() {
   local message
   message="$1"
 
   MICROSOFT_REPOS_READY=0
   if [[ "$INSTALL_VSCODE" -eq 1 ]]; then
     record_result vscode failed "$message"
-  fi
-  if [[ "$INSTALL_EDGE" -eq 1 && "$ARCH" == "amd64" ]]; then
-    record_result edge failed "$message"
   fi
 }
 
@@ -93,44 +94,36 @@ prune_conflicting_microsoft_sources() {
     changed=1
   fi
 
-  if [[ "$INSTALL_EDGE" -eq 1 && "$ARCH" == amd64 && -f "/etc/apt/sources.list.d/microsoft-edge.sources" ]]; then
-    info "Removing conflicting Edge source definition: /etc/apt/sources.list.d/microsoft-edge.sources"
-    as_root rm -f "/etc/apt/sources.list.d/microsoft-edge.sources" || return 1
-    changed=1
-  fi
-
   if [[ "$changed" -eq 1 ]]; then
     info "Removed conflicting Microsoft source definitions before apt refresh."
   fi
 }
 
 setup_microsoft_repos() {
-  info "[1/3] Install Microsoft signing key"
-  TMP_KEY="$(mktemp)" || return 1
+  info "Install Microsoft signing key"
   curl -fsSL "$KEY_URL" | gpg --batch --dearmor > "$TMP_KEY" || return 1
   as_root install -o root -g root -m 644 "$TMP_KEY" "$KEYRING_PATH" || return 1
 
-  info "[2/3] Configure selected Microsoft APT repositories"
+  info "Configure the VS Code APT repository"
   prune_conflicting_microsoft_sources || return 1
-  if [[ "$INSTALL_VSCODE" -eq 1 ]]; then
-    printf 'deb [arch=%s signed-by=%s] https://packages.microsoft.com/repos/code stable main\n' \
-      "$ARCH" "$KEYRING_PATH" \
-      | as_root tee "$VSCODE_LIST" >/dev/null || return 1
-  fi
+  printf 'deb [arch=%s signed-by=%s] https://packages.microsoft.com/repos/code stable main\n' \
+    "$ARCH" "$KEYRING_PATH" \
+    | as_root tee "$VSCODE_LIST" >/dev/null
+}
 
-  if [[ "$INSTALL_EDGE" -eq 1 ]]; then
-    if [[ "$ARCH" == "amd64" ]]; then
-      printf 'deb [arch=amd64 signed-by=%s] https://packages.microsoft.com/repos/edge stable main\n' \
-        "$KEYRING_PATH" \
-        | as_root tee "$EDGE_LIST" >/dev/null || return 1
-    else
-      warn "Edge is only available from the official repo on amd64. Skipping Edge source for $ARCH."
-      record_result edge skipped_unsupported "Microsoft Edge official repo only supports amd64."
-    fi
-  fi
+setup_chrome_repo() {
+  info "Install Google signing key"
+  curl -fsSL "$CHROME_KEY_URL" | gpg --batch --dearmor > "$TMP_KEY" || return 1
+  as_root install -o root -g root -m 644 "$TMP_KEY" "$CHROME_KEYRING_PATH" || return 1
 
-  info "[3/3] Refresh package metadata after repo changes"
-  apt_noninteractive update
+  # Keep one source definition, including on systems with a deb822 source.
+  if [[ -f "$CHROME_DEB822_LIST" ]]; then
+    info "Removing conflicting Chrome source definition: $CHROME_DEB822_LIST"
+    as_root rm -f "$CHROME_DEB822_LIST" || return 1
+  fi
+  printf 'deb [arch=amd64 signed-by=%s] https://dl.google.com/linux/chrome/deb/ stable main\n' \
+    "$CHROME_KEYRING_PATH" \
+    | as_root tee "$CHROME_LIST" >/dev/null
 }
 
 install_desktop_essentials() {
@@ -202,39 +195,40 @@ install_vscode() {
   fi
 }
 
-install_edge() {
+install_chrome() {
   local installed_before=0 status
 
-  if [[ "$INSTALL_EDGE" -eq 0 ]]; then
+  if [[ "$INSTALL_CHROME" -eq 0 ]]; then
     return 0
   fi
 
   if [[ "$ARCH" != "amd64" ]]; then
+    record_result chrome skipped_unsupported "Google Chrome official repo only supports amd64."
     return 0
   fi
 
-  if [[ "$MICROSOFT_REPOS_READY" -ne 1 ]]; then
+  if [[ "$CHROME_REPO_READY" -ne 1 ]]; then
     return 0
   fi
 
-  if ! package_available microsoft-edge-stable; then
-    record_result edge failed "Package 'microsoft-edge-stable' is not available for this distro/repo combination."
+  if ! package_available google-chrome-stable; then
+    record_result chrome failed "Package 'google-chrome-stable' is not available for this distro/repo combination."
     return 0
   fi
 
-  if dpkg_package_installed microsoft-edge-stable; then
+  if dpkg_package_installed google-chrome-stable; then
     installed_before=1
   fi
 
-  if apt_noninteractive install -y microsoft-edge-stable; then
+  if apt_noninteractive install -y google-chrome-stable; then
     if [[ "$installed_before" -eq 1 ]]; then
       status="updated"
     else
       status="installed"
     fi
-    record_result edge "$status" "Installed Microsoft Edge from the Microsoft repository."
+    record_result chrome "$status" "Installed Google Chrome from the Google repository."
   else
-    record_result edge failed "Failed to install Microsoft Edge."
+    record_result chrome failed "Failed to install Google Chrome."
   fi
 }
 
@@ -366,9 +360,9 @@ while [[ $# -gt 0 ]]; do
       INSTALL_VSCODE="$(parse_bool "$1" "$2")"
       shift
       ;;
-    --edge)
-      [[ $# -ge 2 ]] || die "--edge requires a value"
-      INSTALL_EDGE="$(parse_bool "$1" "$2")"
+    --chrome)
+      [[ $# -ge 2 ]] || die "--chrome requires a value"
+      INSTALL_CHROME="$(parse_bool "$1" "$2")"
       shift
       ;;
     -h|--help)
@@ -385,17 +379,17 @@ done
 if [[ "$APPLY" -ne 1 ]]; then
   cat <<EOF
 This was a check run. The script would:
-  1. Configure the Microsoft repositories when VS Code or Edge is selected
+  1. Configure the Microsoft repository for VS Code and the Google repository for Chrome when selected
   2. Install desktop essentials when selected: mpv, wl-clipboard, gnome-tweaks, gnome-shell-extension-manager
   3. Install Visual Studio Code when selected
-  4. Install Microsoft Edge when selected and supported
+  4. Install Google Chrome when selected and supported
   5. On Debian, purge unwanted default desktop apps if present: evolution, firefox-esr, epiphany-browser, gnome-calendar, gnome-contacts, gnome-clocks, gnome-maps, gnome-music, gnome-snapshot, gnome-sound-recorder, gnome-tour, gnome-weather, gnome-characters, gnome-calculator, gnome-software, gnome-software-plugin-deb, gnome-software-plugin-fwupd, gnome-text-editor, loupe, malcontent, malcontent-gui, rhythmbox, shotwell, showtime, totem, xterm, yelp
      Additionally on Debian, evince is treated as redundant only when papers is also installed.
 
 Current selection:
   - desktop_essentials=$DESKTOP_ESSENTIALS
   - vscode=$INSTALL_VSCODE
-  - edge=$INSTALL_EDGE
+  - chrome=$INSTALL_CHROME
 
 Run with --apply to execute.
 EOF
@@ -417,26 +411,33 @@ fi
 INITIAL_FAILURES="$(result_failed_count)"
 record_result_for_disabled_items
 
-if [[ "$DESKTOP_ESSENTIALS" -eq 0 && "$INSTALL_VSCODE" -eq 0 && "$INSTALL_EDGE" -eq 0 ]]; then
+if [[ "$DESKTOP_ESSENTIALS" -eq 0 && "$INSTALL_VSCODE" -eq 0 && "$INSTALL_CHROME" -eq 0 ]]; then
   info "No packaged desktop apps were selected."
   exit 0
 fi
 
 ensure_sudo_session
+TMP_KEY="$(mktemp)"
 
-if [[ "$INSTALL_VSCODE" -eq 1 || "$INSTALL_EDGE" -eq 1 ]]; then
+if [[ "$INSTALL_VSCODE" -eq 1 ]]; then
   if ! setup_microsoft_repos; then
     warn "Microsoft repository setup failed."
-    mark_repo_failure "Failed to configure Microsoft repositories."
+    mark_microsoft_repo_failure "Failed to configure the Microsoft repository."
   fi
 fi
 
-if [[ "$INSTALL_VSCODE" -eq 0 && "$INSTALL_EDGE" -eq 0 ]]; then
-  apt_noninteractive update
+if [[ "$INSTALL_CHROME" -eq 1 && "$ARCH" == "amd64" ]]; then
+  if ! setup_chrome_repo; then
+    warn "Google Chrome repository setup failed."
+    CHROME_REPO_READY=0
+    record_result chrome failed "Failed to configure the Google Chrome repository."
+  fi
 fi
+
+apt_noninteractive update
 install_desktop_essentials
 install_vscode
-install_edge
+install_chrome
 purge_debian_desktop_defaults
 
 [[ "$(result_failed_count)" -eq "$INITIAL_FAILURES" ]]

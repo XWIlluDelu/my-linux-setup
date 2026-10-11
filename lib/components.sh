@@ -7,12 +7,11 @@ declare -ar SETUP_COMPONENTS=(
   desktop_essentials
   chinese_support
   vscode
-  edge
+  chrome
   flatpak
   wechat
   clash_verge_rev
   zotero
-  obsidian
   ghostty
   maple_font
   miniforge
@@ -24,19 +23,18 @@ declare -ar UPDATE_COMPONENTS=(
   redeploy_shell_config
   desktop_essentials
   vscode
-  edge
+  chrome
   flatpak
   wechat
   clash_verge_rev
   zotero
-  obsidian
   ghostty
   maple_font
   miniforge
 )
 
-declare -ar PACKAGED_APP_COMPONENTS=(desktop_essentials vscode edge)
-declare -ar MANAGED_APP_COMPONENTS=(flatpak wechat clash_verge_rev zotero obsidian ghostty maple_font miniforge)
+declare -ar PACKAGED_APP_COMPONENTS=(desktop_essentials vscode chrome)
+declare -ar MANAGED_APP_COMPONENTS=(flatpak wechat clash_verge_rev zotero ghostty maple_font miniforge)
 
 declare -Ar COMPONENT_VARIABLE=(
   [shell_env]=INSTALL_SHELL_ENV
@@ -44,12 +42,11 @@ declare -Ar COMPONENT_VARIABLE=(
   [desktop_essentials]=INSTALL_DESKTOP_ESSENTIALS
   [chinese_support]=INSTALL_CHINESE_SUPPORT
   [vscode]=INSTALL_VSCODE
-  [edge]=INSTALL_EDGE
+  [chrome]=INSTALL_CHROME
   [flatpak]=INSTALL_FLATPAK
   [wechat]=INSTALL_WECHAT
   [clash_verge_rev]=INSTALL_CLASH_VERGE_REV
   [zotero]=INSTALL_ZOTERO
-  [obsidian]=INSTALL_OBSIDIAN
   [ghostty]=INSTALL_GHOSTTY
   [maple_font]=INSTALL_MAPLE_FONT
   [miniforge]=INSTALL_MINIFORGE
@@ -62,12 +59,11 @@ declare -Ar COMPONENT_DESCRIPTION=(
   [desktop_essentials]='mpv + wl-clipboard + Tweaks + Extension Manager'
   [chinese_support]='fcitx5 + Rime + Simplified Chinese font preference'
   [vscode]='Visual Studio Code from the Microsoft repository'
-  [edge]='Microsoft Edge from the Microsoft repository'
+  [chrome]='Google Chrome from the Google repository'
   [flatpak]='Flatpak + Flathub + Flatseal + CJK settings'
   [wechat]='WeChat official .deb package'
   [clash_verge_rev]='Clash Verge Rev via the official distro path'
   [zotero]='Zotero via zotero-deb or the official tarball'
-  [obsidian]='Obsidian via the official .deb or AppImage'
   [ghostty]='Ghostty via the official-doc distro path + managed config'
   [maple_font]='Maple Mono NF CN unhinted font (user scope)'
   [miniforge]='Miniforge in a hidden user-home prefix'
@@ -79,12 +75,11 @@ declare -Ar COMPONENT_SETUP_PROMPT=(
   [desktop_essentials]='Install desktop essentials?'
   [chinese_support]='Install Chinese input and font support?'
   [vscode]='Install Visual Studio Code?'
-  [edge]='Install Microsoft Edge?'
+  [chrome]='Install Google Chrome?'
   [flatpak]='Install Flatpak, Flathub settings, and Flatseal?'
   [wechat]='Install WeChat?'
   [clash_verge_rev]='Install Clash Verge Rev?'
   [zotero]='Install Zotero?'
-  [obsidian]='Install Obsidian?'
   [ghostty]='Install Ghostty?'
   [maple_font]='Install Maple Mono NF CN unhinted?'
   [miniforge]='Install Miniforge?'
@@ -96,12 +91,11 @@ declare -Ar COMPONENT_UPDATE_PROMPT=(
   [redeploy_shell_config]='Redeploy managed shell configuration files?'
   [desktop_essentials]='Install/update desktop essentials?'
   [vscode]='Install/update Visual Studio Code?'
-  [edge]='Install/update Microsoft Edge?'
+  [chrome]='Install/update Google Chrome?'
   [flatpak]='Install/update Flatpak, Flathub settings, and Flatseal?'
   [wechat]='Install/update WeChat?'
   [clash_verge_rev]='Install/update Clash Verge Rev?'
   [zotero]='Install/update Zotero?'
-  [obsidian]='Install/update Obsidian?'
   [ghostty]='Install/update Ghostty?'
   [maple_font]='Install/update Maple Mono NF CN unhinted?'
   [miniforge]='Install/update Miniforge?'

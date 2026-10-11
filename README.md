@@ -68,9 +68,11 @@ Profile defaults:
 | desktop base packages | yes | no |
 | Chinese input / font support | yes | no |
 | VS Code | yes | no |
-| Microsoft Edge | yes | no |
+| Google Chrome | yes | no |
 | NVIDIA installer | yes | yes |
-| Flatpak / WeChat / Clash Verge Rev / Zotero / Obsidian / Ghostty / Maple Font / Miniforge | no | no |
+| Flatpak / WeChat / Clash Verge Rev / Zotero / Ghostty / Maple Font / Miniforge | no | no |
+
+Google Chrome uses Google's signed APT repository and supports amd64 only.
 
 Without `--yes`, `stage2 --apply` asks the user to confirm the profile and install items.
 
@@ -94,7 +96,7 @@ Refresh managed apps and shell components:
 bash ~/my-linux-setup/manage.sh update apps --apply
 ```
 
-`update apps` selects components it detects as installed or managed: desktop essentials, Edge, VS Code, Flatpak, WeChat, Clash Verge Rev, Zotero, Obsidian, Ghostty, Maple Font, Miniforge, and the shell environment. With a TTY present you can add or remove items interactively. `--yes` applies the detection result without prompting.
+`update apps` selects components it detects as installed or managed: desktop essentials, Chrome, VS Code, Flatpak, WeChat, Clash Verge Rev, Zotero, Ghostty, Maple Font, Miniforge, and the shell environment. With a TTY present you can add or remove items interactively. `--yes` applies the detection result without prompting.
 
 Ghostty installs the bundled config only when `~/.config/ghostty/config` is absent; updates keep existing configuration.
 
@@ -175,7 +177,7 @@ These include both runnable tools and historical workstation records. Version nu
 | Directory | Contents |
 |---|---|
 | `extras/app-grid/` | GNOME app grid analysis and folder organization |
-| `extras/edge-sync-fix/` | Edge on Linux sync failure investigation and fix |
+| `extras/edge-sync-fix/` | Historical Edge on Linux sync failure investigation (no longer used) |
 | `extras/fcitx5-vinput/` | vinput 2.4 Bailian / Gemini gateway configuration and paired profile switching |
 | `extras/ghostty-default-terminal/` | GNOME `xdg-terminal-exec` default terminal setup |
 | `extras/pinky/` | Pinky GNOME Shell extension: pin window geometry or toggle always-on-top |
