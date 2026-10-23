@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Behavior checks against real GTK windows, Mutter input and rendered pixels."""
 import json
 import os
@@ -11,7 +12,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import GdkPixbuf, Gio, GLib
 
 BUS = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-UUID = "pinky@local"
+UUID = "pinky@xwilludelu.github.io"
 RED, BLUE, PURPLE, GREEN = "red", "blue", "purple", "green"
 SUPER, SHIFT, P, T, U, LEFT, RIGHT, UP = 125, 42, 25, 20, 22, 105, 106, 103
 
@@ -102,8 +103,13 @@ def edge_pixels(inset=0):
     pix = GdkPixbuf.Pixbuf.new_from_file(result[1])
     data, stride, channels = pix.get_pixels(), pix.get_rowstride(), pix.get_n_channels()
     x, y, width, height = rect()
-    points = [(x + inset, y + height // 2), (x + width - 1 - inset, y + height // 2),
-              (x + width // 2, y + inset), (x + width // 2, y + height - 1 - inset)]
+    # Logical layouts express window geometry in stage units; screenshots use pixels.
+    scale = pix.get_width() / js("global.stage.width")
+    mid_x, mid_y = round((x + width / 2) * scale), round((y + height / 2) * scale)
+    points = [(round((x + inset) * scale), mid_y),
+              (round((x + width - inset) * scale) - 1, mid_y),
+              (mid_x, round((y + inset) * scale)),
+              (mid_x, round((y + height - inset) * scale) - 1)]
     return [tuple(data[py * stride + px * channels:py * stride + px * channels + 3])
             for px, py in points]
 
@@ -196,7 +202,7 @@ def test_border_settings():
         const {Gio} = imports.gi;
         const source = Gio.SettingsSchemaSource.new_from_directory(
             GLib.build_filenamev([GLib.get_user_data_dir(), "gnome-shell", "extensions",
-                                  "pinky@local", "schemas"]),
+                                  "pinky@xwilludelu.github.io", "schemas"]),
             Gio.SettingsSchemaSource.get_default(), false);
         global.borderSettings = new Gio.Settings({
             settings_schema: source.lookup("org.gnome.shell.extensions.pinky", false),
@@ -378,6 +384,21 @@ def test_monitor_change():
         "a 1px border at 200% must end after two physical pixels"
     close(w)
     print("PASS: border placement and thickness at 200% physical scaling", flush=True)
+
+    serial, _, _, _ = call(iface, "GetCurrentState", dest=iface, path=path)
+    call(iface, "ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})",
+         (serial, 1, [(0, 0, 1.5, 0, True, [(connector, mode, {})])],
+          {"layout-mode": GLib.Variant("u", 1)})), dest=iface, path=path)
+    pump(0.8)
+    w = window()
+    js("global.testWin.move_frame(false,200,180);true")
+    key([SUPER, SHIFT, P])
+    before = rect()
+    js("global.testWin.move_resize_frame(false,100,150,600,350);true")
+    same_rect(before, "pin retains logical geometry at 150%")
+    border(RED)
+    close(w)
+    print("PASS: pinned geometry and visible borders at 150% logical scaling", flush=True)
 
 
 def test_workarea_change():

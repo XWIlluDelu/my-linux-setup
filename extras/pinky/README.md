@@ -1,6 +1,10 @@
 # Pinky
 
-Pinky is a small GNOME Shell 50–51 / Wayland extension for keeping reference windows in place or visible above other windows. Geometry pinning and always-on-top are independent controls.
+Pinky is a small GNOME Shell 50 / Wayland extension for keeping reference windows in place or visible above other windows. Geometry pinning and always-on-top are independent controls.
+
+Version 0.1.0 is the initial preview release, tested on GNOME Shell 50.5.
+
+![Red, blue and purple status borders on three example windows](screenshot.png)
 
 ## Use
 
@@ -41,7 +45,7 @@ Appearance changes apply immediately to existing borders. Configure them with GS
 For example, make the border fainter or use a muted orange for pinned windows:
 
 ```bash
-schema="$HOME/.local/share/gnome-shell/extensions/pinky@local/schemas"
+schema="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/pinky@xwilludelu.github.io/schemas"
 gsettings --schemadir "$schema" set org.gnome.shell.extensions.pinky border-opacity 0.45
 gsettings --schemadir "$schema" set org.gnome.shell.extensions.pinky pin-color "'#d08770'"
 ```
@@ -53,39 +57,55 @@ Use `gsettings --schemadir "$schema" reset org.gnome.shell.extensions.pinky bord
 Set `pin-key`, `above-key` or `unpin-all-key` with GSettings, for example:
 
 ```bash
-gsettings --schemadir ~/.local/share/gnome-shell/extensions/pinky@local/schemas \
+schema="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/pinky@xwilludelu.github.io/schemas"
+gsettings --schemadir "$schema" \
   set org.gnome.shell.extensions.pinky pin-key "['<Super><Shift>p']"
 ```
 
 ## Install or update
 
-Run from the repository root:
+If you previously installed the local version, run `gnome-extensions disable pinky@local` first. Existing shortcut and border settings are retained. After enabling and checking the new version, you can uninstall `pinky@local`.
+
+Build the installation ZIP from the repository root. This needs `gnome-extensions` and `glib-compile-schemas`:
 
 ```bash
-dest="$HOME/.local/share/gnome-shell/extensions/pinky@local"
-mkdir -p "$dest/schemas"
-cp extras/pinky/{extension.js,metadata.json} "$dest/"
-cp extras/pinky/schemas/*.xml "$dest/schemas/"
-glib-compile-schemas "$dest/schemas"
+mkdir -p extras/pinky/dist
+gnome-extensions pack --force --extra-source=LICENSE \
+  --out-dir=extras/pinky/dist extras/pinky
+```
+
+Install it with:
+
+```bash
+gnome-extensions install --force \
+  extras/pinky/dist/pinky@xwilludelu.github.io.shell-extension.zip
 ```
 
 Log out and back in to discover a new installation or load updated code, then enable it:
 
 ```bash
-gnome-extensions enable pinky@local
-gnome-extensions info pinky@local
+gnome-extensions enable pinky@xwilludelu.github.io
+gnome-extensions info pinky@xwilludelu.github.io
 ```
 
-The extension should report `State: ACTIVE` and the version in `metadata.json`.
+The extension should report `State: ACTIVE`.
 
 ## Verify behavior
 
-The opt-in integration test needs GNOME Shell 50 or 51, Python 3 with PyGObject, GTK4 and GdkPixbuf typelibs, `dbus-run-session`, and `glib-compile-schemas`:
+The opt-in integration test needs GNOME Shell 50, Python 3 with PyGObject, GTK4 and GdkPixbuf typelibs, `dbus-run-session`, and the packaging tools above:
 
 ```bash
 bash extras/pinky/tests/run.sh
+# Or verify a specific release ZIP:
+bash extras/pinky/tests/run.sh extras/pinky/dist/pinky@xwilludelu.github.io.shell-extension.zip
 ```
 
-It starts a headless compositor on a private session bus with temporary home/config directories and in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, virtual keyboard/pointer input and screenshot pixels check pinning, held shortcuts, border appearance (including 200% physical scaling), size limits, fullscreen transitions, display/work area changes and disable/enable cleanup.
+The test installs the ZIP unchanged into a temporary home, then starts a headless compositor on a private session bus with in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, virtual keyboard/pointer input and screenshot pixels check pinning, held shortcuts, border appearance (including 150% logical and 200% physical scaling), size limits, fullscreen transitions, display/work area changes and disable/enable cleanup.
 
 On your desktop, also try title-bar/edge gestures, minimizing and workspace changes with your usual apps and other extensions, especially when using fractional scaling.
+
+## License and feedback
+
+The files in `extras/pinky` are licensed under [GPL-3.0-or-later](LICENSE): GNU GPL version 3 or, at your option, any later version. This license applies to Pinky, not to the rest of the setup repository.
+
+Report bugs in the repository's [issue tracker](https://github.com/XWIlluDelu/my-linux-setup/issues), including the Pinky version, GNOME Shell version, affected application, display scale and steps to reproduce.

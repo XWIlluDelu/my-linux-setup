@@ -1,8 +1,9 @@
 {
-  "uuid": "pinky@local",
+  "uuid": "pinky@xwilludelu.github.io",
   "name": "Pinky",
-  "description": "Pin the focused window in place or keep it always on top, marked by colored borders.",
-  "shell-version": ["50", "51"],
+  "description": "Pin window position and size, or keep windows always on top, with colored status borders.",
+  "shell-version": ["50"],
+  "url": "https://github.com/XWIlluDelu/my-linux-setup/tree/main/extras/pinky",
   "settings-schema": "org.gnome.shell.extensions.pinky",
-  "version": 12
+  "version-name": "0.1.0"
 }
