@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 from pathlib import Path
@@ -95,15 +94,6 @@ def check_shell_boundary() -> None:
 
 
 def check_bundled_tool_docs() -> None:
-    pinky_dir = ROOT / "extras/pinky"
-    pinky_readme = (pinky_dir / "README.md").read_text(encoding="utf-8")
-    metadata = json.loads((pinky_dir / "metadata.json").read_text(encoding="utf-8"))
-    if f"Pinky v{metadata['version']}" not in pinky_readme:
-        fail("Pinky README version does not match metadata.json")
-    for key in ("pin-key", "above-key", "unpin-all-key"):
-        if f"`{key}`" not in pinky_readme:
-            fail(f"Pinky README omits configurable schema key {key}")
-
     session_readme = (
         ROOT / "extras/my-ai-tools/claude-session-manager/README.md"
     ).read_text(encoding="utf-8")

@@ -1,6 +1,6 @@
 # Pinky
 
-Pinky v8 is a GNOME Shell 50–51 / Wayland extension with two independent controls: pin a window's position and size, or keep it always on top.
+Pinky is a GNOME Shell 50–51 / Wayland extension with two independent controls: pin a window's position and size, or keep it always on top.
 
 ## Use
 
@@ -10,11 +10,22 @@ Pinky v8 is a GNOME Shell 50–51 / Wayland extension with two independent contr
 | `Super+Shift+T` | Toggle always-on-top on the focused window |
 | `Super+Shift+U` | Unpin every pinned window; leave always-on-top unchanged |
 
-A 2px border shows the state: **red** for pinned, **blue** for always-on-top, **purple** for both. Changes through the Shell's window menu update the border too.
+Holding a shortcut acts once. A 2px inset border shows the state: **red** for pinned, **blue** for always-on-top, **purple** for both. Changes through the Shell's window menu update the border too. The border follows the window's stacking and visibility, including when maximized or fullscreen.
 
-Pinning saves the window's frame rectangle and maximize/fullscreen state. Pinky cancels interactive moves and resizes through Mutter's Escape handler, and restores the saved geometry and state after other changes. Closing, minimizing and workspace changes remain available.
+### What pinning preserves
 
-Pins last until unpinned or the extension is disabled, including on screen lock. Always-on-top is Mutter state and survives disable/enable. The border follows the window's stacking and visibility.
+- **Floating windows:** keep the current frame rectangle.
+- **Side-tiled or single-axis-maximized windows:** become floating at the same rectangle. Unpinning leaves them floating; it does not rebuild the previous tiling relationship.
+- **Maximized and fullscreen windows:** keep their rectangle and state.
+
+Pinky cancels interactive moves and resizes through Mutter's Escape handler and restores geometry/state after other attempts to change them. Closing, minimizing and changing workspaces remain available. Unpinning stops enforcement without moving the window.
+
+Application size limits and display layout take precedence over a pin:
+
+- If new minimum/maximum sizes no longer permit the saved rectangle, Pinky unpins that window and notifies you. You can pin its new size again. Size hints follow Mutter's rules: fullscreen ignores them, and maximized windows ignore maximum sizes.
+- Changing display layout, resolution or scale releases all pins with a notification, so Mutter can place windows in the new layout.
+
+Disabling the extension also releases pins, including on screen lock. Always-on-top is Mutter state and remains unchanged by all these releases.
 
 ### Change shortcuts
 
@@ -44,16 +55,16 @@ gnome-extensions enable pinky@local
 gnome-extensions info pinky@local
 ```
 
-The extension should report version 8 and `State: ACTIVE`.
+The extension should report `State: ACTIVE` and the version in `metadata.json`.
 
-## Check behavior
+## Verify behavior
 
-On a normal, resizable window:
+The opt-in integration test needs GNOME Shell 50 or 51, Python 3 with PyGObject, GTK4 and GdkPixbuf typelibs, `dbus-run-session`, and `glib-compile-schemas`:
 
-- Pin it; try title-bar and `Super` dragging, edge resizing, and the window menu's keyboard Move/Resize. Its frame should stay fixed. Try maximize and fullscreen too.
-- Pin an already maximized or fullscreen window; attempts to restore it should retain its original state until unpinned.
-- Toggle always-on-top with both the shortcut and window menu. Check red/blue/purple transitions and that other windows cover only non-above windows.
-- Unpin all; above windows should keep their blue borders and move freely.
-- Close a pinned window. Disable/enable the extension: pins should clear, while above windows regain blue borders.
+```bash
+bash extras/pinky/tests/run.sh
+```
 
-Geometry/state restoration, move/resize cancellation, border state and lifecycle were integration-tested on GNOME Shell 50.5 and 51.0 with a GTK4 Wayland window in a headless compositor. Use the checks above for desktop input paths and visual behavior.
+It starts a headless compositor on a private session bus with temporary home/config directories and in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, virtual keyboard/pointer input and screenshot pixels check pinning, held shortcuts, visible borders, size limits, display changes and disable/enable cleanup.
+
+On your desktop, also try title-bar/edge gestures, minimizing and workspace changes with your usual apps and other extensions, especially when using fractional scaling.

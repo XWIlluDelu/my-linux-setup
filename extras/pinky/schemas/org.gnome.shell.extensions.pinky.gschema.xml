@@ -5,7 +5,7 @@
     <key name="pin-key" type="as">
       <default>['&lt;Super&gt;&lt;Shift&gt;p']</default>
       <summary>Pin window shortcut</summary>
-      <description>Toggles pin on the focused window: it cannot be moved or resized until unpinned.</description>
+      <description>Toggles the focused window's geometry pin. Side-tiled windows become floating at the same size and position. Pins release when display layout changes or application size limits no longer permit the saved rectangle.</description>
     </key>
     <key name="above-key" type="as">
       <default>['&lt;Super&gt;&lt;Shift&gt;t']</default>
