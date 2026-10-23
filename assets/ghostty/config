@@ -10,7 +10,8 @@ font-family = "Noto Sans Mono CJK SC"
 font-size = 12
 font-feature = "+calt"
 font-feature = "+liga"
-font-feature = "+dlig"
+# Keep discretionary CJK ligatures from collapsing terminal cells (e.g. 令和 → ㋿).
+font-feature = "-dlig"
 freetype-load-flags = hinting,autohint,no-force-autohint
 adjust-font-baseline = 1
 
