@@ -9,16 +9,10 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 const PIN_KEY = 'pin-key';
 const ABOVE_KEY = 'above-key';
 const UNPIN_ALL_KEY = 'unpin-all-key';
-const BORDER = 2;
-
-const COLOR = {
-    pin: '#ef4444',
-    above: '#3b82f6',
-    both: '#8b5cf6',
-};
 
 export default class PinkyExtension extends Extension {
     _settings = null;
+    _settingsChangedId = 0;
     // Meta.Window -> signal ids; includes windows changed through the Shell menu.
     _tracked = new Map();
     // Meta.Window -> border and optional pinned geometry/state.
@@ -57,10 +51,14 @@ export default class PinkyExtension extends Extension {
     }
 
     _restyle(win, entry) {
-        const color = entry.pin
-            ? (win.is_above() ? COLOR.both : COLOR.pin)
-            : COLOR.above;
-        entry.frame.style = `border: ${BORDER}px solid ${color};`;
+        const state = entry.pin ? (win.is_above() ? 'both' : 'pin') : 'above';
+        const key = `${state}-color`;
+        const value = this._settings.get_string(key);
+        const color = /^#[0-9a-f]{6}$/i.test(value)
+            ? value : this._settings.get_default_value(key).unpack();
+        const width = this._settings.get_int('border-width');
+        entry.frame.style = `border: ${width}px solid ${color};`;
+        entry.frame.opacity = Math.round(255 * this._settings.get_double('border-opacity'));
     }
 
     // Use buffer-relative coordinates; the actor can lag during animations.
@@ -238,6 +236,10 @@ export default class PinkyExtension extends Extension {
 
     enable() {
         this._settings = this.getSettings();
+        this._settingsChangedId = this._settings.connect('changed', () => {
+            for (const [win, entry] of this._framed)
+                this._restyle(win, entry);
+        });
         Main.wm.addKeybinding(
             PIN_KEY, this._settings,
             Meta.KeyBindingFlags.IGNORE_AUTOREPEAT, Shell.ActionMode.NORMAL,
@@ -277,6 +279,8 @@ export default class PinkyExtension extends Extension {
     }
 
     disable() {
+        this._settings.disconnect(this._settingsChangedId);
+        this._settingsChangedId = 0;
         Main.wm.removeKeybinding(PIN_KEY);
         Main.wm.removeKeybinding(ABOVE_KEY);
         Main.wm.removeKeybinding(UNPIN_ALL_KEY);

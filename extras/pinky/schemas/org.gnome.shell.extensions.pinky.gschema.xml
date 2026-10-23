@@ -2,6 +2,33 @@
 <schemalist>
   <schema id="org.gnome.shell.extensions.pinky"
           path="/org/gnome/shell/extensions/pinky/">
+    <key name="border-width" type="i">
+      <default>1</default>
+      <range min="1" max="8"/>
+      <summary>Border width</summary>
+      <description>Width of the inset status border in CSS pixels.</description>
+    </key>
+    <key name="border-opacity" type="d">
+      <default>0.65</default>
+      <range min="0.0" max="1.0"/>
+      <summary>Border opacity</summary>
+      <description>Border opacity from 0 (hidden) to 1 (opaque). Does not change pin or always-on-top state.</description>
+    </key>
+    <key name="pin-color" type="s">
+      <default>'#ef4444'</default>
+      <summary>Pinned window color</summary>
+      <description>Border color for pinned windows in #rrggbb format.</description>
+    </key>
+    <key name="above-color" type="s">
+      <default>'#3b82f6'</default>
+      <summary>Always-on-top window color</summary>
+      <description>Border color for always-on-top windows in #rrggbb format.</description>
+    </key>
+    <key name="both-color" type="s">
+      <default>'#8b5cf6'</default>
+      <summary>Pinned and always-on-top window color</summary>
+      <description>Border color for windows with both states in #rrggbb format.</description>
+    </key>
     <key name="pin-key" type="as">
       <default>['&lt;Super&gt;&lt;Shift&gt;p']</default>
       <summary>Pin window shortcut</summary>

@@ -12,7 +12,7 @@ from gi.repository import GdkPixbuf, Gio, GLib
 
 BUS = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 UUID = "pinky@local"
-RED, BLUE, PURPLE = "red", "blue", "purple"
+RED, BLUE, PURPLE, GREEN = "red", "blue", "purple", "green"
 SUPER, SHIFT, P, T, U, LEFT, RIGHT, UP = 125, 42, 25, 20, 22, 105, 106, 103
 
 
@@ -92,7 +92,7 @@ def window():
     return w
 
 
-def border(color):
+def edge_pixels(inset=0):
     pump(0.3)
     filename = str(Path(os.environ["XDG_RUNTIME_DIR"]) / "border.png")
     result = call("org.gnome.Shell.Screenshot", "Screenshot",
@@ -102,18 +102,24 @@ def border(color):
     pix = GdkPixbuf.Pixbuf.new_from_file(result[1])
     data, stride, channels = pix.get_pixels(), pix.get_rowstride(), pix.get_n_channels()
     x, y, width, height = rect()
-    points = [(x + 1, y + height // 2), (x + width - 2, y + height // 2),
-              (x + width // 2, y + 1), (x + width // 2, y + height - 2)]
-    actual = [tuple(data[py * stride + px * channels:py * stride + px * channels + 3])
-              for px, py in points]
-    # Check the visible hue, not exact CSS bytes: the panel casts a shadow
-    # on the upper edge of maximized windows.
+    points = [(x + inset, y + height // 2), (x + width - 1 - inset, y + height // 2),
+              (x + width // 2, y + inset), (x + width // 2, y + height - 1 - inset)]
+    return [tuple(data[py * stride + px * channels:py * stride + px * channels + 3])
+            for px, py in points]
+
+
+def border(color, inset=0):
+    actual = edge_pixels(inset)
+    # Check visible hue rather than CSS bytes: transparency blends with the
+    # client, and the panel casts a shadow on maximized windows.
     matches = {
-        RED: lambda r, g, b: r > 2 * max(g, b),
-        BLUE: lambda r, g, b: b > 1.3 * g > 2 * r,
-        PURPLE: lambda r, g, b: b > r > 1.3 * g,
+        RED: lambda r, g, b: r > max(g, b) + 15,
+        BLUE: lambda r, g, b: b > g + 15 and g > r + 10,
+        PURPLE: lambda r, g, b: b > r + 15 and r > g + 10,
+        GREEN: lambda r, g, b: g > max(r, b) + 15,
     }
     assert all(matches[color](*rgb) for rgb in actual), ("visible border", color, actual, rect())
+    return actual
 
 
 def same_rect(expected, message):
@@ -179,6 +185,57 @@ def test_toggles_and_borders():
         pump(0.6)
     close(w)
     print("PASS: held shortcuts, independent controls and visible borders", flush=True)
+
+
+def test_border_settings():
+    w = window()
+    key([SUPER, SHIFT, P])
+    before = rect()
+    js("""
+        const {Gio} = imports.gi;
+        const source = Gio.SettingsSchemaSource.new_from_directory(
+            GLib.build_filenamev([GLib.get_user_data_dir(), "gnome-shell", "extensions",
+                                  "pinky@local", "schemas"]),
+            Gio.SettingsSchemaSource.get_default(), false);
+        global.borderSettings = new Gio.Settings({
+            settings_schema: source.lookup("org.gnome.shell.extensions.pinky", false),
+        });
+        global.borderSettings.set_double("border-opacity", 1.0);
+        true
+    """)
+    opaque = border(RED)
+    js('global.borderSettings.set_double("border-opacity", 0.0);true')
+    hidden = edge_pixels()
+    js("global.testWin.move_frame(false,200,180);true")
+    same_rect(before, "hiding a border must not unpin its window")
+    js('global.borderSettings.set_double("border-opacity", 0.5);true')
+    faint = border(RED)
+    for full, half, background in zip(opaque, faint, hidden):
+        full_contrast = sum(abs(a - b) for a, b in zip(full, background))
+        half_contrast = sum(abs(a - b) for a, b in zip(half, background))
+        assert 10 < half_contrast < full_contrast, ("opacity must soften the border", full, half, background)
+    js('global.borderSettings.set_string("pin-color", "not-a-color");true')
+    border(RED)  # A malformed setting retains the default state indicator.
+    js("""
+        global.borderSettings.set_int("border-width", 3);
+        global.borderSettings.set_string("pin-color", "#44cc88");
+        global.borderSettings.set_string("above-color", "#ef4444");
+        global.borderSettings.set_string("both-color", "#3b82f6");
+        true
+    """)
+    border(GREEN, inset=2)  # A third row/column is now visibly part of the border.
+    key([SUPER, SHIFT, T])
+    border(BLUE, inset=2)
+    key([SUPER, SHIFT, U])
+    border(RED, inset=2)
+    js("""
+        for (const key of ["border-width", "border-opacity", "pin-color", "above-color", "both-color"])
+            global.borderSettings.reset(key);
+        true
+    """)
+    border(BLUE)
+    close(w)
+    print("PASS: live width, opacity and per-state colors without changing window behavior", flush=True)
 
 
 def test_geometry():
@@ -300,6 +357,7 @@ if __name__ == "__main__":
         true
     """)
     test_toggles_and_borders()
+    test_border_settings()
     test_geometry()
     test_constraints_and_lifecycle()
     test_monitor_change()
