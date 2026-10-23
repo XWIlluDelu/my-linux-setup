@@ -1,6 +1,6 @@
 # Pinky
 
-Pinky v7 is a GNOME Shell 50 / Wayland extension with two independent controls: pin a window's position and size, or keep it always on top.
+Pinky v8 is a GNOME Shell 50–51 / Wayland extension with two independent controls: pin a window's position and size, or keep it always on top.
 
 ## Use
 
@@ -44,7 +44,7 @@ gnome-extensions enable pinky@local
 gnome-extensions info pinky@local
 ```
 
-The extension should report version 7 and `State: ACTIVE`.
+The extension should report version 8 and `State: ACTIVE`.
 
 ## Check behavior
 
@@ -56,4 +56,4 @@ On a normal, resizable window:
 - Unpin all; above windows should keep their blue borders and move freely.
 - Close a pinned window. Disable/enable the extension: pins should clear, while above windows regain blue borders.
 
-Geometry/state restoration, move/resize cancellation, border state and lifecycle were integration-tested on GNOME Shell 50.5 with a GTK4 Wayland window in a headless compositor. Use the checks above for desktop input paths and visual behavior.
+Geometry/state restoration, move/resize cancellation, border state and lifecycle were integration-tested on GNOME Shell 50.5 and 51.0 with a GTK4 Wayland window in a headless compositor. Use the checks above for desktop input paths and visual behavior.
