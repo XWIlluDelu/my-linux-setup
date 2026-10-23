@@ -81,12 +81,12 @@ def key(keys, hold=0.08):
     pump(0.4)
 
 
-def window():
-    w = Gtk.Window(title="Pinky behavior test", default_width=500, default_height=300)
+def window(title="Pinky behavior test"):
+    w = Gtk.Window(title=title, default_width=500, default_height=300)
     w.set_child(Gtk.Label(label="Window content"))
     w.present()
     pump(0.5)
-    js("global.testWin=global.display.list_all_windows().find(w=>w.title==='Pinky behavior test');true")
+    js(f"global.testWin=global.display.list_all_windows().find(w=>w.title==={json.dumps(title)});true")
     js("global.testMain.activateWindow(global.testWin);true")
     wait_for(lambda: js("global.display.focus_window===global.testWin"), "window focus")
     return w
@@ -172,17 +172,18 @@ def test_toggles_and_borders():
     key([SUPER, SHIFT, U])
     border(BLUE)
     js("global.testWin.unmake_above();true")
-    for enter, leave in [("maximize", "unmaximize"), ("make_fullscreen", "unmake_fullscreen")]:
-        js(f"global.testWin.{enter}();true")
-        pump(0.6)
-        before = rect()
-        key([SUPER, SHIFT, P])
-        border(RED)
-        js(f"global.testWin.{leave}();true")
-        same_rect(before, f"pinned {enter}")
-        key([SUPER, SHIFT, U])
-        js(f"global.testWin.{leave}();true")
-        pump(0.6)
+    floating = rect()
+    js("global.testWin.maximize();true")
+    pump(0.6)
+    before = rect()
+    key([SUPER, SHIFT, P])
+    border(RED)
+    js("global.testWin.unmaximize();true")
+    same_rect(before, "pinned maximized window")
+    assert js("global.testWin.is_maximized()"), "pin must preserve maximized state"
+    key([SUPER, SHIFT, U])
+    js("global.testWin.unmaximize();true")
+    same_rect(floating, "unmaximizing after unpin restores the floating rectangle")
     close(w)
     print("PASS: held shortcuts, independent controls and visible borders", flush=True)
 
@@ -311,6 +312,35 @@ def test_constraints_and_lifecycle():
     print("PASS: size limits, disable/enable and closing a pinned window", flush=True)
 
 
+def test_fullscreen_transitions():
+    for maximized in (False, True):
+        w = window()
+        js("global.testWin.move_frame(false,150,160);true")
+        pump(0.3)
+        floating = rect()
+        if maximized:
+            js("global.testWin.maximize();true")
+            pump(0.5)
+        before = rect()
+        key([SUPER, SHIFT, T])
+        key([SUPER, SHIFT, P])
+        w.fullscreen()
+        wait_for(lambda: js("global.testWin.is_fullscreen()"), "enter fullscreen")
+        border(BLUE)  # Entering fullscreen releases pin, preserving above.
+        key([SUPER, SHIFT, P])
+        border(PURPLE)
+        w.unfullscreen()
+        same_rect(before, "leaving fullscreen preserves the original restore rectangle")
+        assert js("!global.testWin.is_fullscreen()"), "fullscreen exit must complete"
+        assert js("global.testWin.is_maximized()") == maximized, "restore pre-fullscreen state"
+        border(BLUE)
+        if maximized:
+            js("global.testWin.unmaximize();true")
+            same_rect(floating, "fullscreen must also preserve the floating restore rectangle")
+        close(w)
+    print("PASS: fullscreen transitions release pins and preserve restore geometry and above", flush=True)
+
+
 def test_monitor_change():
     w = window()
     js("global.testWin.move_to_monitor(1);true")
@@ -350,6 +380,37 @@ def test_monitor_change():
     print("PASS: border placement and thickness at 200% physical scaling", flush=True)
 
 
+def test_workarea_change():
+    w = window("Pinky affected work area")
+    js("global.testWin.move_frame(false,100,100);global.workareaWin=global.testWin;true")
+    key([SUPER, SHIFT, T])
+    key([SUPER, SHIFT, P])
+    other = window("Pinky unaffected work area")
+    js("global.testWin.move_to_monitor(1);true")
+    pump(0.5)
+    key([SUPER, SHIFT, T])
+    key([SUPER, SHIFT, P])
+    js("""
+        global.testDock = new imports.gi.St.Widget({x: 0, y: 0, width: 1280, height: 180});
+        global.testMain.layoutManager.addChrome(global.testDock, {affectsStruts: true});
+        true
+    """)
+    pump(0.5)
+    border(PURPLE)  # A change on the other monitor must not release this pin.
+    before = rect()
+    js("global.testWin.move_frame(false,1400,200);true")
+    same_rect(before, "unaffected work area retains its pin")
+    close(other)
+    js("global.testWin=global.workareaWin;true")
+    border(BLUE)
+    before = rect()
+    js("global.testWin.move_frame(false,200,220);true")
+    wait_for(lambda: rect() != before, "changed work area must release pin")
+    js("global.testMain.layoutManager.removeChrome(global.testDock);global.testDock.destroy();true")
+    close(w)
+    print("PASS: work area changes release only affected pins and preserve above", flush=True)
+
+
 if __name__ == "__main__":
     wait_for(ready, "GNOME startup and extension discovery", timeout=20)
     assert extension("EnableExtension") == (True,)
@@ -377,4 +438,6 @@ if __name__ == "__main__":
     test_border_settings()
     test_geometry()
     test_constraints_and_lifecycle()
+    test_fullscreen_transitions()
+    test_workarea_change()
     test_monitor_change()

@@ -20,6 +20,7 @@ export default class PinkyExtension extends Extension {
     _createdId = 0;
     _grabId = 0;
     _monitorsId = 0;
+    _workareasId = 0;
     _virtualKeyboard = null;
 
     _track(win) {
@@ -100,6 +101,13 @@ export default class PinkyExtension extends Extension {
     // State and geometry signals can re-enter while we restore the rectangle.
     _restore(win, entry) {
         if (entry.restoring) return;
+        // Re-entering fullscreen before the client commits its restored size
+        // overwrites Mutter's saved floating rectangle. Let the transition finish.
+        if (entry.pin.fullscreen !== win.is_fullscreen()) {
+            this._unpin(win, entry);
+            Main.notify('UNPINNED', `${win.title}: fullscreen changed`);
+            return;
+        }
         if (!this._fitsSizeLimits(win, entry.pin)) {
             this._unpin(win, entry);
             Main.notify('UNPINNED', `${win.title}: application size limits changed`);
@@ -107,16 +115,12 @@ export default class PinkyExtension extends Extension {
         }
         entry.restoring = true;
         try {
-            const {rect: r, maximized, fullscreen} = entry.pin;
+            const {rect: r, maximized} = entry.pin;
             const current = win.get_maximize_flags();
             if (current & ~maximized)
                 win.set_unmaximize_flags(current & ~maximized);
             if (maximized & ~current)
                 win.set_maximize_flags(maximized & ~current);
-            if (fullscreen && !win.is_fullscreen())
-                win.make_fullscreen();
-            else if (!fullscreen && win.is_fullscreen())
-                win.unmake_fullscreen();
             win.move_resize_frame(false, r.x, r.y, r.width, r.height);
         } finally {
             entry.restoring = false;
@@ -173,6 +177,7 @@ export default class PinkyExtension extends Extension {
         const fullscreen = win.is_fullscreen();
         entry.pin = {
             rect: win.get_frame_rect(),
+            workArea: win.get_work_area_current_monitor(),
             // Side tiling uses vertical maximization, but flags do not describe
             // which side or tile partner. Pin that rectangle as a floating window.
             maximized: fullscreen || maximized === Meta.MaximizeFlags.BOTH
@@ -238,6 +243,20 @@ export default class PinkyExtension extends Extension {
             `${pinned.length} window${pinned.length > 1 ? 's' : ''}`);
     }
 
+    _unpinForWorkareaChange() {
+        let released = false;
+        for (const [win, entry] of this._framed) {
+            if (!entry.pin) continue;
+            const area = win.get_work_area_current_monitor();
+            if (['x', 'y', 'width', 'height'].every(key => area[key] === entry.pin.workArea[key]))
+                continue;
+            this._unpin(win, entry);
+            released = true;
+        }
+        if (released)
+            Main.notify('UNPINNED', 'Desktop work area changed');
+    }
+
     enable() {
         this._settings = this.getSettings();
         this._settingsChangedId = this._settings.connect('changed', () => {
@@ -280,6 +299,8 @@ export default class PinkyExtension extends Extension {
             (_display, win) => this._cancelGrab(win));
         this._monitorsId = Main.layoutManager.connect('monitors-changed',
             () => this._unpinAll('Display layout changed'));
+        this._workareasId = global.display.connect('workareas-changed',
+            () => this._unpinForWorkareaChange());
     }
 
     disable() {
@@ -290,6 +311,8 @@ export default class PinkyExtension extends Extension {
         Main.wm.removeKeybinding(UNPIN_ALL_KEY);
         Main.layoutManager.disconnect(this._monitorsId);
         this._monitorsId = 0;
+        global.display.disconnect(this._workareasId);
+        this._workareasId = 0;
         global.display.disconnect(this._grabId);
         this._grabId = 0;
         this._virtualKeyboard = null;

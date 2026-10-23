@@ -1,6 +1,6 @@
 # Pinky
 
-Pinky is a GNOME Shell 50–51 / Wayland extension with two independent controls: pin a window's position and size, or keep it always on top.
+Pinky is a small GNOME Shell 50–51 / Wayland extension for keeping reference windows in place or visible above other windows. Geometry pinning and always-on-top are independent controls.
 
 ## Use
 
@@ -16,14 +16,15 @@ Holding a shortcut acts once. A 1px inset border at 65% opacity shows the state:
 
 - **Floating windows:** keep the current frame rectangle.
 - **Side-tiled or single-axis-maximized windows:** become floating at the same rectangle. Unpinning leaves them floating; it does not rebuild the previous tiling relationship.
-- **Maximized and fullscreen windows:** keep their rectangle and state.
+- **Maximized windows:** keep their rectangle and maximized state.
+- **Fullscreen windows:** can be pinned, but entering or leaving fullscreen releases the pin. This preserves Mutter's original restore size.
 
-Pinky cancels interactive moves and resizes through Mutter's Escape handler and restores geometry/state after other attempts to change them. Closing, minimizing and changing workspaces remain available. Unpinning stops enforcement without moving the window.
+Pinky cancels interactive moves and resizes through Mutter's Escape handler and restores pinned geometry and maximization after other attempts to change them. Closing, minimizing and changing workspaces remain available. Unpinning stops enforcement without moving the window.
 
 Application size limits and display layout take precedence over a pin:
 
 - If new minimum/maximum sizes no longer permit the saved rectangle, Pinky unpins that window and notifies you. You can pin its new size again. Size hints follow Mutter's rules: fullscreen ignores them, and maximized windows ignore maximum sizes.
-- Changing display layout, resolution or scale releases all pins with a notification, so Mutter can place windows in the new layout.
+- Changing display layout, resolution or scale releases all pins with a notification, so Mutter can place windows in the new layout. Adding or changing a panel or dock releases pins only where the available work area changed.
 
 Disabling the extension also releases pins, including on screen lock. Always-on-top is Mutter state and remains unchanged by all these releases.
 
@@ -85,6 +86,6 @@ The opt-in integration test needs GNOME Shell 50 or 51, Python 3 with PyGObject,
 bash extras/pinky/tests/run.sh
 ```
 
-It starts a headless compositor on a private session bus with temporary home/config directories and in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, virtual keyboard/pointer input and screenshot pixels check pinning, held shortcuts, border appearance (including 200% physical scaling), size limits, display changes and disable/enable cleanup.
+It starts a headless compositor on a private session bus with temporary home/config directories and in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, virtual keyboard/pointer input and screenshot pixels check pinning, held shortcuts, border appearance (including 200% physical scaling), size limits, fullscreen transitions, display/work area changes and disable/enable cleanup.
 
 On your desktop, also try title-bar/edge gestures, minimizing and workspace changes with your usual apps and other extensions, especially when using fractional scaling.
