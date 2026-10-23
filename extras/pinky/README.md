@@ -66,19 +66,10 @@ gsettings --schemadir "$schema" \
 
 If you previously installed the local version, run `gnome-extensions disable pinky@local` first. Existing shortcut and border settings are retained. After enabling and checking the new version, you can uninstall `pinky@local`.
 
-Build the installation ZIP from the repository root. This needs `gnome-extensions` and `glib-compile-schemas`:
+Download the [Pinky 0.1.0 installation ZIP](https://github.com/XWIlluDelu/my-linux-setup/releases/download/pinky-v0.1.0/pinky%40xwilludelu.github.io.shell-extension.zip) from the [preview release](https://github.com/XWIlluDelu/my-linux-setup/releases/tag/pinky-v0.1.0). In the directory containing the download, run:
 
 ```bash
-mkdir -p extras/pinky/dist
-gnome-extensions pack --force --extra-source=LICENSE \
-  --out-dir=extras/pinky/dist extras/pinky
-```
-
-Install it with:
-
-```bash
-gnome-extensions install --force \
-  extras/pinky/dist/pinky@xwilludelu.github.io.shell-extension.zip
+gnome-extensions install --force pinky@xwilludelu.github.io.shell-extension.zip
 ```
 
 Log out and back in to discover a new installation or load updated code, then enable it:
@@ -89,6 +80,20 @@ gnome-extensions info pinky@xwilludelu.github.io
 ```
 
 The extension should report `State: ACTIVE`.
+
+### Build from source
+
+From the repository root, build and install the ZIP with `gnome-extensions` and `glib-compile-schemas` available:
+
+```bash
+mkdir -p extras/pinky/dist
+gnome-extensions pack --force --extra-source=LICENSE \
+  --out-dir=extras/pinky/dist extras/pinky
+gnome-extensions install --force \
+  extras/pinky/dist/pinky@xwilludelu.github.io.shell-extension.zip
+```
+
+Then log out and back in and enable the extension as described above.
 
 ## Verify behavior
 
