@@ -1,8 +1,8 @@
 # Pinky
 
-Pinky is a small GNOME Shell 50 / Wayland extension for keeping reference windows in place or visible above other windows. Geometry pinning and always-on-top are independent controls.
+Pinky is a small GNOME Shell 50–51 / Wayland extension for keeping reference windows in place or visible above other windows. Geometry pinning and always-on-top are independent controls.
 
-Version 0.1.0 is the initial preview release, tested on GNOME Shell 50.5.
+Version 0.1.0 is the initial preview release. GNOME 50 is the minimum version: Pinky uses window size-limit APIs introduced in Mutter 50 to release pins when application constraints change.
 
 ![Red, blue and purple status borders on three example windows](screenshot.png)
 
@@ -92,7 +92,7 @@ The extension should report `State: ACTIVE`.
 
 ## Verify behavior
 
-The opt-in integration test needs GNOME Shell 50, Python 3 with PyGObject, GTK4 and GdkPixbuf typelibs, `dbus-run-session`, and the packaging tools above:
+The opt-in integration test needs GNOME Shell 50 or 51, Python 3 with PyGObject, GTK4 and GdkPixbuf typelibs, `dbus-run-session`, and the packaging tools above:
 
 ```bash
 bash extras/pinky/tests/run.sh
@@ -100,9 +100,9 @@ bash extras/pinky/tests/run.sh
 bash extras/pinky/tests/run.sh extras/pinky/dist/pinky@xwilludelu.github.io.shell-extension.zip
 ```
 
-The test installs the ZIP unchanged into a temporary home, then starts a headless compositor on a private session bus with in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, virtual keyboard/pointer input and screenshot pixels check pinning, held shortcuts, border appearance (including 150% logical and 200% physical scaling), size limits, fullscreen transitions, display/work area changes and disable/enable cleanup.
+The test installs the ZIP unchanged into a temporary home, then starts a headless compositor on a private session bus with in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, keyboard/titlebar/edge input and screenshot pixels check pinning, held shortcuts, border appearance (including mixed-scale monitors, 150% logical and 200% physical scaling), size limits, fullscreen transitions, display/work area changes and disable/enable cleanup.
 
-On your desktop, also try title-bar/edge gestures, minimizing and workspace changes with your usual apps and other extensions, especially when using fractional scaling.
+Release verification passed on GNOME Shell/Mutter 50.5, 51.0 and 51.1. Additional checks on 50.5 covered Chrome and Qt Wayland windows, XWayland windows, minimizing, workspace changes, and moving windows between monitors with different scales.
 
 ## License and feedback
 

@@ -270,18 +270,16 @@ def test_geometry():
         key(keys)
         wait_for(lambda: js("!global.display.is_grabbed()"), "cancel keyboard move/resize")
         same_rect(before, "keyboard move/resize")
-    x, y, _, _ = before
-    for button in (1, 2):  # Super+left/middle drag: native move/resize
-        js(f"global.testPointer.notify_absolute_motion(GLib.get_monotonic_time(),{x+100},{y+100});true")
+    x, y, width, height = before
+    # Drag the client's titlebar and outer resize edge, without a WM modifier.
+    for px, py in [(x + width // 2, y + 15), (x + width + 3, y + height // 2)]:
+        js(f"global.testPointer.notify_absolute_motion(GLib.get_monotonic_time(),{px},{py});true")
         pump()
-        key_event(SUPER, "PRESSED")
-        pump()
-        js(f"global.testPointer.notify_button(GLib.get_monotonic_time(),{button},Clutter.ButtonState.PRESSED);true")
-        pump()
-        js(f"global.testPointer.notify_absolute_motion(GLib.get_monotonic_time(),{x+180},{y+140});true")
-        pump()
-        js(f"global.testPointer.notify_button(GLib.get_monotonic_time(),{button},Clutter.ButtonState.RELEASED);true")
-        key_event(SUPER, "RELEASED")
+        js("global.testPointer.notify_button(GLib.get_monotonic_time(),1,Clutter.ButtonState.PRESSED);true")
+        pump(0.2)
+        js(f"global.testPointer.notify_absolute_motion(GLib.get_monotonic_time(),{px+80},{py+40});true")
+        pump(0.3)
+        js("global.testPointer.notify_button(GLib.get_monotonic_time(),1,Clutter.ButtonState.RELEASED);true")
         pump(0.3)
         same_rect(before, "pointer move/resize")
     assert js("global.grabCount===4"), "all keyboard and pointer grab paths must actually run"
@@ -348,16 +346,32 @@ def test_fullscreen_transitions():
 
 
 def test_monitor_change():
+    iface = "org.gnome.Mutter.DisplayConfig"
+    path = "/org/gnome/Mutter/DisplayConfig"
+    serial, monitors, _, _ = call(iface, "GetCurrentState", dest=iface, path=path)
+    connector, mode = monitors[0][0][0], monitors[0][1][0][0]
+    other_connector, other_mode = monitors[1][0][0], monitors[1][1][0][0]
+    call(iface, "ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})",
+         (serial, 1, [(0, 0, 1.5, 0, True, [(connector, mode, {})]),
+                      (1280, 0, 1.0, 0, False, [(other_connector, other_mode, {})])],
+          {"layout-mode": GLib.Variant("u", 1)})), dest=iface, path=path)
+    pump(0.8)
+    w = window()
+    key([SUPER, SHIFT, T])
+    for monitor in (0, 1, 0):
+        js(f"global.testWin.move_to_monitor({monitor});true")
+        pump(0.7)
+        assert js("global.testWin.get_monitor()") == monitor, "window must cross monitors"
+        border(BLUE)
+    close(w)
+    print("PASS: visible borders across 150%/100% logical monitors", flush=True)
+
     w = window()
     js("global.testWin.move_to_monitor(1);true")
     pump(0.5)
     key([SUPER, SHIFT, T])
     key([SUPER, SHIFT, P])
-    iface = "org.gnome.Mutter.DisplayConfig"
-    path = "/org/gnome/Mutter/DisplayConfig"
-    serial, monitors, _, _ = call(iface, "GetCurrentState", dest=iface, path=path)
-    connector = monitors[0][0][0]
-    mode = monitors[0][1][0][0]
+    serial, _, _, _ = call(iface, "GetCurrentState", dest=iface, path=path)
     call(iface, "ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})",
          (serial, 1, [(0, 0, 1.0, 0, True, [(connector, mode, {})])], {})), dest=iface, path=path)
     pump(0.8)
