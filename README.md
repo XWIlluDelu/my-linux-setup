@@ -98,7 +98,7 @@ bash ~/my-linux-setup/manage.sh update apps --apply
 
 `update apps` selects components it detects as installed or managed: desktop essentials, Chrome, VS Code, Flatpak, WeChat, Clash Verge Rev, Zotero, Ghostty, Maple Font, Miniforge, and the shell environment. With a TTY present you can add or remove items interactively. `--yes` applies the detection result without prompting.
 
-Ghostty installs the bundled config only when `~/.config/ghostty/config` is absent; updates keep existing configuration.
+On Debian, Ghostty reuses a configured Griffo community APT repository when its package metadata is available; otherwise it uses the community GitHub release feed. An APT failure does not trigger a switch to GitHub packages. Ubuntu keeps its separate community release feed. Ghostty installs the bundled config only when `~/.config/ghostty/config` is absent; updates keep existing configuration.
 
 Repair package state:
 

@@ -105,6 +105,65 @@ deploy_managed_ghostty_config
 [[ "$(<"$TEST_DIR/.config/ghostty/config")" == 'font-size = 23' ]]
 ''')
 
+    def test_ghostty_apt_channel_detection(self):
+        self.bash(f'source "{ROOT}/tasks/apps/external/ghostty.sh"\n' + r'''
+apt-cache() {
+  [[ "$*" == 'madison ghostty' ]]
+  printf 'ghostty | 1.3.1-6~forky | %s forky/main amd64 Packages\n' "$REPO_URL"
+}
+for REPO_URL in https://deb.griffo.io/apt https://debian.griffo.io/apt/; do
+  ghostty_apt_repo_available
+done
+for REPO_URL in https://deb.griffo.io.evil.invalid/apt https://example.invalid/apt https://deb.griffo.io/apt-other; do
+  if ghostty_apt_repo_available; then exit 1; fi
+done
+apt-cache() { return 1; }
+if ghostty_apt_repo_available; then exit 1; fi
+''')
+
+    def test_ghostty_preserves_apt_channel_and_reports_failures(self):
+        self.bash(f'source "{ROOT}/tasks/apps/external/ghostty.sh"\n' + r'''
+INSTALL_GHOSTTY=1
+PKG_MANAGER=apt-get
+ARCH=amd64
+TARGET_USER=test
+TARGET_HOME="$TEST_DIR"
+GHOSTTY_CONFIG_ASSET="$TEST_DIR/missing-default"
+mkdir -p "$TARGET_HOME/.config/ghostty"
+printf 'font-size = 23\n' > "$TARGET_HOME/.config/ghostty/config"
+detect_os_release() { DISTRO_ID=debian; }
+apt_deb_workflow_supported() { return 0; }
+apt-cache() { printf 'ghostty | 1.3.1-6~forky | https://deb.griffo.io/apt forky/main amd64 Packages\n'; }
+installed_package_version_for_current_manager() { printf '1.3.1-6~forky\n'; }
+install_packages() { [[ "$*" == ghostty ]]; touch "$TEST_DIR/apt-used"; }
+record_result() { printf '%s %s\n' "$1" "$2" >> "$TEST_DIR/results"; }
+ghostty_release_selector() { printf 'debian\tforky\n'; }
+install_ghostty_from_release() {
+  touch "$TEST_DIR/github-used"
+  GHOSTTY_INSTALL_STATUS=already_present
+  GHOSTTY_INSTALL_MESSAGE='GitHub package already installed'
+}
+
+install_ghostty
+[[ -e "$TEST_DIR/apt-used" && ! -e "$TEST_DIR/github-used" ]]
+grep -qx 'ghostty already_present' "$TEST_DIR/results"
+[[ "$(<"$TARGET_HOME/.config/ghostty/config")" == 'font-size = 23' ]]
+
+# A broken configured channel is a failure, not permission to change channels.
+: > "$TEST_DIR/results"
+install_packages() { return 1; }
+install_ghostty
+grep -qx 'ghostty failed' "$TEST_DIR/results"
+[[ ! -e "$TEST_DIR/github-used" ]]
+
+# Hosts without that APT channel retain the release-based install path.
+apt-cache() { return 0; }
+: > "$TEST_DIR/results"
+install_ghostty
+[[ -e "$TEST_DIR/github-used" ]]
+grep -qx 'ghostty already_present' "$TEST_DIR/results"
+''')
+
     def test_app_grid_quotes_values_and_validates_before_writing(self):
         fake_bin = self.work / "bin"
         fake_bin.mkdir()

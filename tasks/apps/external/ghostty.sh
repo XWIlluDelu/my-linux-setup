@@ -49,6 +49,12 @@ ghostty_release_selector() {
       ;;
   esac
 }
+ghostty_apt_repo_available() {
+  # Reuse an existing community APT channel instead of replacing it with a
+  # differently versioned GitHub .deb. Do not add or rewrite local sources.
+  LC_ALL=C apt-cache madison ghostty 2>/dev/null \
+    | grep -E '\|[[:space:]]+https?://(deb|debian)\.griffo\.io/apt([/[:space:]]|$)' >/dev/null
+}
 install_ghostty_from_release() {
   local repo asset_regex source_label
   local target_path package_name package_version installed_version installed_before=0 status
@@ -201,6 +207,20 @@ install_ghostty() {
       ghostty \
       "Ghostty" \
       "the official docs only document distro packages for Arch/Fedora/Ubuntu, community Debian packaging, and source/community builds elsewhere."
+    return 0
+  fi
+
+  if [[ "$DISTRO_ID" == debian ]] && ghostty_apt_repo_available; then
+    if install_ghostty_via_system_package "the configured Ghostty community APT repository"; then
+      if deploy_managed_ghostty_config; then
+        record_result ghostty "$GHOSTTY_INSTALL_STATUS" "$GHOSTTY_INSTALL_MESSAGE"
+      else
+        record_result ghostty failed "${GHOSTTY_INSTALL_MESSAGE}; failed to deploy the managed Ghostty config."
+      fi
+    else
+      record_result ghostty failed "Failed to install Ghostty from the configured community APT repository."
+    fi
+    # A failed APT update must not silently switch package channels.
     return 0
   fi
 
