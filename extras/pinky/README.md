@@ -85,6 +85,6 @@ The opt-in integration test needs GNOME Shell 50 or 51, Python 3 with PyGObject,
 bash extras/pinky/tests/run.sh
 ```
 
-It starts a headless compositor on a private session bus with temporary home/config directories and in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, virtual keyboard/pointer input and screenshot pixels check pinning, held shortcuts, visible borders and live appearance changes, size limits, display changes and disable/enable cleanup.
+It starts a headless compositor on a private session bus with temporary home/config directories and in-memory settings. It does not change the installed extension or the running desktop. Real GTK4 Wayland windows, virtual keyboard/pointer input and screenshot pixels check pinning, held shortcuts, border appearance (including 200% physical scaling), size limits, display changes and disable/enable cleanup.
 
 On your desktop, also try title-bar/edge gestures, minimizing and workspace changes with your usual apps and other extensions, especially when using fractional scaling.

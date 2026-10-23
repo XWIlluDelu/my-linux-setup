@@ -332,6 +332,23 @@ def test_monitor_change():
     close(w)
     print("PASS: monitor removal releases pins, preserves above and usable placement", flush=True)
 
+    # Physical layouts scale window actors as well as the desktop theme. The
+    # border must stay on the window edges and keep its intended CSS thickness.
+    serial, _, _, _ = call(iface, "GetCurrentState", dest=iface, path=path)
+    call(iface, "ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})",
+         (serial, 1, [(0, 0, 2.0, 0, True, [(connector, mode, {})])],
+          {"layout-mode": GLib.Variant("u", 2)})), dest=iface, path=path)
+    pump(0.8)
+    w = window()
+    js("global.testWin.move_frame(false,200,180);true")
+    key([SUPER, SHIFT, T])
+    border(BLUE)
+    border(BLUE, inset=1)
+    assert all(not (b > g + 15 and g > r + 10) for r, g, b in edge_pixels(2)), \
+        "a 1px border at 200% must end after two physical pixels"
+    close(w)
+    print("PASS: border placement and thickness at 200% physical scaling", flush=True)
+
 
 if __name__ == "__main__":
     wait_for(ready, "GNOME startup and extension discovery", timeout=20)

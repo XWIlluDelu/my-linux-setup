@@ -44,7 +44,7 @@ p.write_text(p.read_text().replace('    enable() {', '''    enable() {
         global.testMain = Main;''', 1))
 PY
 gnome-shell --wayland --headless --no-x11 --force-animations \
-    --virtual-monitor 1280x800 --virtual-monitor 1280x800 \
+    --virtual-monitor 2560x1600 --virtual-monitor 1280x800 \
     --wayland-display pinky-test > "$tmp/shell.log" 2>&1 &
 shell=$!
 cleanup() {

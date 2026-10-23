@@ -65,8 +65,12 @@ export default class PinkyExtension extends Extension {
     _syncFrame(win, entry) {
         const r = win.get_frame_rect();
         const b = win.get_buffer_rect();
+        // Mutter scales actor children in physical monitor layouts. Cancel that
+        // transform so geometry and St's CSS scaling stay in stage coordinates.
+        const scale = win.get_compositor_private().get_child_transform().get_value(0, 0);
         // Draw inside the frame so all four edges remain visible at screen edges.
-        entry.frame.set_position(r.x - b.x, r.y - b.y);
+        entry.frame.set_position((r.x - b.x) / scale, (r.y - b.y) / scale);
+        entry.frame.set_scale(1 / scale, 1 / scale);
         entry.frame.set_size(r.width, r.height);
     }
 
