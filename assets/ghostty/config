@@ -28,6 +28,10 @@ link-previews = true
 mouse-hide-while-typing = true
 cursor-click-to-move = true
 
+# Shell integration
+# Use Ghostty's native remote terminfo installation and fallback.
+shell-integration-features = ssh-terminfo
+
 # System
 gtk-single-instance = true
 

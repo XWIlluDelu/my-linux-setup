@@ -22,58 +22,6 @@ setopt NO_NOMATCH
 setopt AUTO_MENU
 setopt ALWAYS_TO_END
 
-# Install xterm-ghostty terminfo on a remote host over ssh.
-ghostty_sync_terminfo() {
-  local target="$1"
-  if [[ -z "$target" ]]; then
-    echo "Usage: ghostty_sync_terminfo user@host"
-    return 1
-  fi
-
-  if ! command -v infocmp >/dev/null 2>&1 || ! infocmp -x xterm-ghostty >/dev/null 2>&1; then
-    echo "❌ Local xterm-ghostty terminfo not found (or infocmp missing)." >&2
-    return 1
-  fi
-
-  infocmp -x xterm-ghostty | command ssh "$target" '
-set -e
-mkdir -p "$HOME/.terminfo"
-if command -v tic >/dev/null 2>&1; then
-  tic -x -o "$HOME/.terminfo" /dev/stdin
-  echo "✅ xterm-ghostty terminfo installed at ~/.terminfo"
-else
-  echo "❌ Remote tic not found. Install ncurses-term/ncurses-bin first." >&2
-  exit 1
-fi
-'
-}
-
-ghostty_check_remote_terminfo() {
-  local target="$1"
-  if [[ -z "$target" ]]; then
-    echo "Usage: ghostty_check_remote_terminfo user@host"
-    return 1
-  fi
-
-  command ssh "$target" '
-if command -v infocmp >/dev/null 2>&1 && infocmp -x xterm-ghostty >/dev/null 2>&1; then
-  echo "✅ remote xterm-ghostty terminfo is available"
-else
-  echo "⚠️  remote xterm-ghostty terminfo is missing; run: ghostty_sync_terminfo user@host"
-fi
-'
-}
-
-# Fall back to xterm-256color when a remote host lacks xterm-ghostty terminfo.
-if [[ -n "${SSH_CONNECTION:-}" && "${TERM:-}" == "xterm-ghostty" ]]; then
-  if ! command -v infocmp >/dev/null 2>&1 || ! infocmp -x xterm-ghostty >/dev/null 2>&1; then
-    if [[ "${GHOSTTY_SSH_FALLBACK_TERM:-1}" == "1" ]]; then
-      export TERM=xterm-256color
-      echo "⚠️  remote missing xterm-ghostty terminfo; using TERM=xterm-256color (run ghostty_sync_terminfo user@host to fix)"
-    fi
-  fi
-fi
-
 bindkey -e
 bindkey '^[[H' beginning-of-line
 bindkey '^[[F' end-of-line
