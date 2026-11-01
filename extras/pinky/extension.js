@@ -24,9 +24,18 @@ export default class PinkyExtension extends Extension {
     _workareasId = 0;
     _virtualKeyboard = null;
 
+    _supportsWindow(win) {
+        // App-owned overlays/toolbars may be transparent and always-on-top.
+        // Framing their full buffer exposes an otherwise invisible rectangle.
+        return [Meta.WindowType.NORMAL, Meta.WindowType.DIALOG,
+            Meta.WindowType.MODAL_DIALOG, Meta.WindowType.UTILITY]
+            .includes(win.get_window_type());
+    }
+
     _track(win) {
         this._tracked.set(win, [
             win.connect('notify::above', () => this._syncAbove(win)),
+            win.connect('notify::window-type', () => this._syncAbove(win)),
             // Disconnect before Mutter removes the actor or changes closing geometry.
             win.connect('unmanaging', () => this._untrack(win)),
         ]);
@@ -44,6 +53,10 @@ export default class PinkyExtension extends Extension {
     // Follow Mutter's above state, regardless of which UI changed it.
     _syncAbove(win) {
         const entry = this._framed.get(win);
+        if (!this._supportsWindow(win)) {
+            if (entry) this._detach(win);
+            return;
+        }
         if (win.is_above())
             this._restyle(win, entry ?? this._attach(win));
         else if (entry?.pin)
@@ -216,6 +229,7 @@ export default class PinkyExtension extends Extension {
     }
 
     _togglePin(win) {
+        if (!this._supportsWindow(win)) return;
         const entry = this._framed.get(win);
         if (entry?.pin) {
             this._unpin(win, entry);
@@ -226,6 +240,7 @@ export default class PinkyExtension extends Extension {
     }
 
     _toggleAbove(win) {
+        if (!this._supportsWindow(win)) return;
         if (win.is_above()) {
             win.unmake_above();
             Main.notify('NOT ON TOP', win.title);

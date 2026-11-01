@@ -14,7 +14,7 @@ Version 0.1.0 is the initial preview release. GNOME 50 is the minimum version: P
 | `Super+Shift+T` | Toggle always-on-top on the focused window |
 | `Super+Shift+U` | Unpin every pinned window; leave always-on-top unchanged |
 
-Holding a shortcut acts once. A 1px inset border at 65% opacity shows the state: **red** for pinned, **blue** for always-on-top, **purple** for both. Changes through the Shell's window menu update the border too. The border follows the window's stacking and visibility, including when maximized or fullscreen.
+Holding a shortcut acts once. A 1px inset border at 65% opacity shows the state: **red** for pinned, **blue** for always-on-top, **purple** for both. Changes through the Shell's window menu update the border too. The border follows the window's stacking and visibility, including when maximized or fullscreen. Pinky supports normal windows, dialogs and utility windows; it ignores toolbars, menus, docks and other app-owned overlays. This keeps transparent always-on-top overlays (such as Typeless's status window) from acquiring a visible rectangular border.
 
 ### What pinning preserves
 

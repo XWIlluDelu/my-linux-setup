@@ -194,6 +194,58 @@ def test_toggles_and_borders():
     print("PASS: held shortcuts, independent controls and visible borders", flush=True)
 
 
+def test_overlay_window_policy():
+    w = window("Pinky window policy test")
+    # Exercise the policy against a real window/actor. GTK4's Wayland API
+    # cannot request TOOLBAR, so override the type getter in this test only.
+    js(f"""
+        global.policyExtension=global.testMain.extensionManager.lookup({json.dumps(UUID)}).stateObj;
+        global.originalTypeGetter=global.testWin.get_window_type;
+        global.testWin.make_above();
+        true
+    """)
+    border(BLUE)
+    js("""
+        global.testWin.get_window_type=()=>imports.gi.Meta.WindowType.TOOLBAR;
+        global.policyExtension._syncAbove(global.testWin);
+        true
+    """)
+    assert js("!global.policyExtension._framed.has(global.testWin)"), "toolbar must not be framed"
+    assert js("global.testWin.is_above()"), "ignore overlay without changing app's above state"
+    js("""
+        global.policyExtension._togglePin(global.testWin);
+        global.policyExtension._toggleAbove(global.testWin);
+        true
+    """)
+    assert js("!global.policyExtension._framed.has(global.testWin) && global.testWin.is_above()")
+    assert js("""
+        (() => {
+            const Meta=imports.gi.Meta;
+            for (const type of [Meta.WindowType.DOCK, Meta.WindowType.DESKTOP,
+                                Meta.WindowType.MENU, Meta.WindowType.TOOLTIP,
+                                Meta.WindowType.NOTIFICATION]) {
+                global.testWin.get_window_type=()=>type;
+                if (global.policyExtension._supportsWindow(global.testWin)) return false;
+            }
+            for (const type of [Meta.WindowType.NORMAL, Meta.WindowType.DIALOG,
+                                Meta.WindowType.MODAL_DIALOG, Meta.WindowType.UTILITY]) {
+                global.testWin.get_window_type=()=>type;
+                if (!global.policyExtension._supportsWindow(global.testWin)) return false;
+            }
+            return true;
+        })()
+    """), "application windows only"
+    js("""
+        global.testWin.get_window_type=global.originalTypeGetter;
+        global.policyExtension._syncAbove(global.testWin);
+        true
+    """)
+    border(BLUE)
+    w.destroy()
+    pump()
+    print("PASS: overlays ignored without changing above; normal window borders restored", flush=True)
+
+
 def test_border_settings():
     w = window()
     key([SUPER, SHIFT, P])
@@ -470,6 +522,7 @@ if __name__ == "__main__":
         true
     """)
     test_toggles_and_borders()
+    test_overlay_window_policy()
     test_border_settings()
     test_geometry()
     test_constraints_and_lifecycle()
