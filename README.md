@@ -178,7 +178,6 @@ These include both runnable tools and historical workstation records. Version nu
 |---|---|
 | `extras/app-grid/` | GNOME app grid analysis and folder organization |
 | `extras/edge-sync-fix/` | Historical Edge on Linux sync failure investigation (no longer used) |
-| `extras/fcitx5-vinput/` | vinput 2.4 Bailian / Gemini gateway configuration and paired profile switching |
 | `extras/ghostty-default-terminal/` | GNOME `xdg-terminal-exec` default terminal setup |
 | `extras/pinky/` | Pinky GNOME Shell extension: pin window geometry or toggle always-on-top |
 | `extras/nautilus-enhancements/` | Nautilus `Open in Terminal` and `Copy Path` enhancements |
