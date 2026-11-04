@@ -1,9 +1,0 @@
-{
-  "uuid": "pinky@xwilludelu.github.io",
-  "name": "Pinky",
-  "description": "Pin window position and size, or keep windows always on top, with colored status borders.",
-  "shell-version": ["50", "51"],
-  "url": "https://github.com/XWIlluDelu/my-linux-setup/tree/main/extras/pinky",
-  "settings-schema": "org.gnome.shell.extensions.pinky",
-  "version-name": "0.1.0"
-}

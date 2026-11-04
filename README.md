@@ -172,14 +172,15 @@ The tests exercise fake commands and temporary data, including failed mounts, fa
 
 ## Extras
 
-These include both runnable tools and historical workstation records. Version numbers in incident/setup notes describe the recorded environment, not a requirement to downgrade a new installation.
+These include runnable tools, historical workstation records, and links to independently maintained projects. Version numbers in incident/setup notes describe the recorded environment, not a requirement to downgrade a new installation.
 
 | Directory | Contents |
 |---|---|
 | `extras/app-grid/` | GNOME app grid analysis and folder organization |
 | `extras/edge-sync-fix/` | Historical Edge on Linux sync failure investigation (no longer used) |
 | `extras/ghostty-default-terminal/` | GNOME `xdg-terminal-exec` default terminal setup |
-| `extras/pinky/` | Pinky GNOME Shell extension: pin window geometry or toggle always-on-top |
+| `extras/pinky/` | Link to the standalone [Pinky](https://github.com/XWIlluDelu/pinky) GNOME Shell extension |
+| `extras/tilingshell/` | Link to the personal [Tiling Shell fork](https://github.com/XWIlluDelu/tilingshell) |
 | `extras/nautilus-enhancements/` | Nautilus `Open in Terminal` and `Copy Path` enhancements |
 | `extras/psychtoolbox/` | Psychtoolbox 3 local install notes |
 | `extras/wemeet-screen-share-fix/` | Wemeet screen-share black-screen fix |
